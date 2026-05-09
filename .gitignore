@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.env.local
+.vercel
+crm_contacts_final.json
+Personal\ CRM.zip
+src/imported-contacts.json
+.DS_Store

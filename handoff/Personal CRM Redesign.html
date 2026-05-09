@@ -1,0 +1,2027 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Personal CRM — Redesign After</title>
+<meta name="viewport" content="width=1600" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #f0eee9; font-family: 'Inter', system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="env,react">
+
+// DesignCanvas.jsx — Figma-ish design canvas wrapper
+// Warm gray grid bg + Sections + Artboards + PostIt notes.
+// Artboards are reorderable (grip-drag), labels/titles are inline-editable,
+// and any artboard can be opened in a fullscreen focus overlay (←/→/Esc).
+// State persists to a .design-canvas.state.json sidecar via the host
+// bridge. No assets, no deps.
+//
+// Usage:
+//   <DesignCanvas>
+//     <DCSection id="onboarding" title="Onboarding" subtitle="First-run variants">
+//       <DCArtboard id="a" label="A · Dusk" width={260} height={480}>…</DCArtboard>
+//       <DCArtboard id="b" label="B · Minimal" width={260} height={480}>…</DCArtboard>
+//     </DCSection>
+//   </DesignCanvas>
+
+const DC = {
+  bg: '#f0eee9',
+  grid: 'rgba(0,0,0,0.06)',
+  label: 'rgba(60,50,40,0.7)',
+  title: 'rgba(40,30,20,0.85)',
+  subtitle: 'rgba(60,50,40,0.6)',
+  postitBg: '#fef4a8',
+  postitText: '#5a4a2a',
+  font: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+};
+
+// One-time CSS injection (classes are dc-prefixed so they don't collide with
+// the hosted design's own styles).
+if (typeof document !== 'undefined' && !document.getElementById('dc-styles')) {
+  const s = document.createElement('style');
+  s.id = 'dc-styles';
+  s.textContent = [
+    '.dc-editable{cursor:text;outline:none;white-space:nowrap;border-radius:3px;padding:0 2px;margin:0 -2px}',
+    '.dc-editable:focus{background:#fff;box-shadow:0 0 0 1.5px #c96442}',
+    '[data-dc-slot]{transition:transform .18s cubic-bezier(.2,.7,.3,1)}',
+    '[data-dc-slot].dc-dragging{transition:none;z-index:10;pointer-events:none}',
+    '[data-dc-slot].dc-dragging .dc-card{box-shadow:0 12px 40px rgba(0,0,0,.25),0 0 0 2px #c96442;transform:scale(1.02)}',
+    '.dc-card{transition:box-shadow .15s,transform .15s}',
+    '.dc-card *{scrollbar-width:none}',
+    '.dc-card *::-webkit-scrollbar{display:none}',
+    '.dc-labelrow{display:flex;align-items:center;gap:4px;height:24px}',
+    '.dc-grip{cursor:grab;display:flex;align-items:center;padding:5px 4px;border-radius:4px;transition:background .12s}',
+    '.dc-grip:hover{background:rgba(0,0,0,.08)}',
+    '.dc-grip:active{cursor:grabbing}',
+    '.dc-labeltext{cursor:pointer;border-radius:4px;padding:3px 6px;display:flex;align-items:center;transition:background .12s}',
+    '.dc-labeltext:hover{background:rgba(0,0,0,.05)}',
+    '.dc-expand{position:absolute;bottom:100%;right:0;margin-bottom:5px;z-index:2;opacity:0;transition:opacity .12s,background .12s;',
+    '  width:22px;height:22px;border-radius:5px;border:none;cursor:pointer;padding:0;',
+    '  background:transparent;color:rgba(60,50,40,.7);display:flex;align-items:center;justify-content:center}',
+    '.dc-expand:hover{background:rgba(0,0,0,.06);color:#2a251f}',
+    '[data-dc-slot]:hover .dc-expand{opacity:1}',
+  ].join('\n');
+  document.head.appendChild(s);
+}
+
+const DCCtx = React.createContext(null);
+
+// ─────────────────────────────────────────────────────────────
+// DesignCanvas — stateful wrapper around the pan/zoom viewport.
+// Owns runtime state (per-section order, renamed titles/labels, focused
+// artboard). Order/titles/labels persist to a .design-canvas.state.json
+// sidecar next to the HTML. Reads go via plain fetch() so the saved
+// arrangement is visible anywhere the HTML + sidecar are served together
+// (omelette preview, direct link, downloaded zip). Writes go through the
+// host's window.omelette bridge — editing requires the omelette runtime.
+// Focus is ephemeral.
+// ─────────────────────────────────────────────────────────────
+const DC_STATE_FILE = '.design-canvas.state.json';
+
+function DesignCanvas({ children, minScale, maxScale, style }) {
+  const [state, setState] = React.useState({ sections: {}, focus: null });
+  // Hold rendering until the sidecar read settles so the saved order/titles
+  // appear on first paint (no source-order flash). didRead gates writes until
+  // the read settles so the empty initial state can't clobber a slow read;
+  // skipNextWrite suppresses the one echo-write that would otherwise follow
+  // hydration.
+  const [ready, setReady] = React.useState(false);
+  const didRead = React.useRef(false);
+  const skipNextWrite = React.useRef(false);
+
+  React.useEffect(() => {
+    let off = false;
+    fetch('./' + DC_STATE_FILE)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((saved) => {
+        if (off || !saved || !saved.sections) return;
+        skipNextWrite.current = true;
+        setState((s) => ({ ...s, sections: saved.sections }));
+      })
+      .catch(() => {})
+      .finally(() => { didRead.current = true; if (!off) setReady(true); });
+    const t = setTimeout(() => { if (!off) setReady(true); }, 150);
+    return () => { off = true; clearTimeout(t); };
+  }, []);
+
+  React.useEffect(() => {
+    if (!didRead.current) return;
+    if (skipNextWrite.current) { skipNextWrite.current = false; return; }
+    const t = setTimeout(() => {
+      window.omelette?.writeFile(DC_STATE_FILE, JSON.stringify({ sections: state.sections })).catch(() => {});
+    }, 250);
+    return () => clearTimeout(t);
+  }, [state.sections]);
+
+  // Build registries synchronously from children so FocusOverlay can read
+  // them in the same render. Only direct DCSection > DCArtboard children are
+  // walked — wrapping them in other elements opts out of focus/reorder.
+  const registry = {};     // slotId -> { sectionId, artboard }
+  const sectionMeta = {};  // sectionId -> { title, subtitle, slotIds[] }
+  const sectionOrder = [];
+  React.Children.forEach(children, (sec) => {
+    if (!sec || sec.type !== DCSection) return;
+    const sid = sec.props.id ?? sec.props.title;
+    if (!sid) return;
+    sectionOrder.push(sid);
+    const persisted = state.sections[sid] || {};
+    const srcIds = [];
+    React.Children.forEach(sec.props.children, (ab) => {
+      if (!ab || ab.type !== DCArtboard) return;
+      const aid = ab.props.id ?? ab.props.label;
+      if (!aid) return;
+      registry[`${sid}/${aid}`] = { sectionId: sid, artboard: ab };
+      srcIds.push(aid);
+    });
+    const kept = (persisted.order || []).filter((k) => srcIds.includes(k));
+    sectionMeta[sid] = {
+      title: persisted.title ?? sec.props.title,
+      subtitle: sec.props.subtitle,
+      slotIds: [...kept, ...srcIds.filter((k) => !kept.includes(k))],
+    };
+  });
+
+  const api = React.useMemo(() => ({
+    state,
+    section: (id) => state.sections[id] || {},
+    patchSection: (id, p) => setState((s) => ({
+      ...s,
+      sections: { ...s.sections, [id]: { ...s.sections[id], ...(typeof p === 'function' ? p(s.sections[id] || {}) : p) } },
+    })),
+    setFocus: (slotId) => setState((s) => ({ ...s, focus: slotId })),
+  }), [state]);
+
+  // Esc exits focus; any outside pointerdown commits an in-progress rename.
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') api.setFocus(null); };
+    const onPd = (e) => {
+      const ae = document.activeElement;
+      if (ae && ae.isContentEditable && !ae.contains(e.target)) ae.blur();
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onPd, true);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onPd, true);
+    };
+  }, [api]);
+
+  return (
+    <DCCtx.Provider value={api}>
+      <DCViewport minScale={minScale} maxScale={maxScale} style={style}>{ready && children}</DCViewport>
+      {state.focus && registry[state.focus] && (
+        <DCFocusOverlay entry={registry[state.focus]} sectionMeta={sectionMeta} sectionOrder={sectionOrder} />
+      )}
+    </DCCtx.Provider>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// DCViewport — transform-based pan/zoom (internal)
+//
+// Input mapping (Figma-style):
+//   • trackpad pinch  → zoom   (ctrlKey wheel; Safari gesture* events)
+//   • trackpad scroll → pan    (two-finger)
+//   • mouse wheel     → zoom   (notched; distinguished from trackpad scroll)
+//   • middle-drag / primary-drag-on-bg → pan
+//
+// Transform state lives in a ref and is written straight to the DOM
+// (translate3d + will-change) so wheel ticks don't go through React —
+// keeps pans at 60fps on dense canvases.
+// ─────────────────────────────────────────────────────────────
+function DCViewport({ children, minScale = 0.1, maxScale = 8, style = {} }) {
+  const vpRef = React.useRef(null);
+  const worldRef = React.useRef(null);
+  const tf = React.useRef({ x: 0, y: 0, scale: 1 });
+
+  const apply = React.useCallback(() => {
+    const { x, y, scale } = tf.current;
+    const el = worldRef.current;
+    if (el) el.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`;
+  }, []);
+
+  React.useEffect(() => {
+    const vp = vpRef.current;
+    if (!vp) return;
+
+    const zoomAt = (cx, cy, factor) => {
+      const r = vp.getBoundingClientRect();
+      const px = cx - r.left, py = cy - r.top;
+      const t = tf.current;
+      const next = Math.min(maxScale, Math.max(minScale, t.scale * factor));
+      const k = next / t.scale;
+      // keep the world point under the cursor fixed
+      t.x = px - (px - t.x) * k;
+      t.y = py - (py - t.y) * k;
+      t.scale = next;
+      apply();
+    };
+
+    // Mouse-wheel vs trackpad-scroll heuristic. A physical wheel sends
+    // line-mode deltas (Firefox) or large integer pixel deltas with no X
+    // component (Chrome/Safari, typically multiples of 100/120). Trackpad
+    // two-finger scroll sends small/fractional pixel deltas, often with
+    // non-zero deltaX. ctrlKey is set by the browser for trackpad pinch.
+    const isMouseWheel = (e) =>
+      e.deltaMode !== 0 ||
+      (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 40);
+
+    const onWheel = (e) => {
+      e.preventDefault();
+      if (isGesturing) return; // Safari: gesture* owns the pinch — discard concurrent wheels
+      if (e.ctrlKey) {
+        // trackpad pinch (or explicit ctrl+wheel)
+        zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01));
+      } else if (isMouseWheel(e)) {
+        // notched mouse wheel — fixed-ratio step per click
+        zoomAt(e.clientX, e.clientY, Math.exp(-Math.sign(e.deltaY) * 0.18));
+      } else {
+        // trackpad two-finger scroll — pan
+        tf.current.x -= e.deltaX;
+        tf.current.y -= e.deltaY;
+        apply();
+      }
+    };
+
+    // Safari sends native gesture* events for trackpad pinch with a smooth
+    // e.scale; preferring these over the ctrl+wheel fallback gives a much
+    // better feel there. No-ops on other browsers. Safari also fires
+    // ctrlKey wheel events during the same pinch — isGesturing makes
+    // onWheel drop those entirely so they neither zoom nor pan.
+    let gsBase = 1;
+    let isGesturing = false;
+    const onGestureStart = (e) => { e.preventDefault(); isGesturing = true; gsBase = tf.current.scale; };
+    const onGestureChange = (e) => {
+      e.preventDefault();
+      zoomAt(e.clientX, e.clientY, (gsBase * e.scale) / tf.current.scale);
+    };
+    const onGestureEnd = (e) => { e.preventDefault(); isGesturing = false; };
+
+    // Drag-pan: middle button anywhere, or primary button on canvas
+    // background (anything that isn't an artboard or an inline editor).
+    let drag = null;
+    const onPointerDown = (e) => {
+      const onBg = !e.target.closest('[data-dc-slot], .dc-editable');
+      if (!(e.button === 1 || (e.button === 0 && onBg))) return;
+      e.preventDefault();
+      vp.setPointerCapture(e.pointerId);
+      drag = { id: e.pointerId, lx: e.clientX, ly: e.clientY };
+      vp.style.cursor = 'grabbing';
+    };
+    const onPointerMove = (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      tf.current.x += e.clientX - drag.lx;
+      tf.current.y += e.clientY - drag.ly;
+      drag.lx = e.clientX; drag.ly = e.clientY;
+      apply();
+    };
+    const onPointerUp = (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      vp.releasePointerCapture(e.pointerId);
+      drag = null;
+      vp.style.cursor = '';
+    };
+
+    vp.addEventListener('wheel', onWheel, { passive: false });
+    vp.addEventListener('gesturestart', onGestureStart, { passive: false });
+    vp.addEventListener('gesturechange', onGestureChange, { passive: false });
+    vp.addEventListener('gestureend', onGestureEnd, { passive: false });
+    vp.addEventListener('pointerdown', onPointerDown);
+    vp.addEventListener('pointermove', onPointerMove);
+    vp.addEventListener('pointerup', onPointerUp);
+    vp.addEventListener('pointercancel', onPointerUp);
+    return () => {
+      vp.removeEventListener('wheel', onWheel);
+      vp.removeEventListener('gesturestart', onGestureStart);
+      vp.removeEventListener('gesturechange', onGestureChange);
+      vp.removeEventListener('gestureend', onGestureEnd);
+      vp.removeEventListener('pointerdown', onPointerDown);
+      vp.removeEventListener('pointermove', onPointerMove);
+      vp.removeEventListener('pointerup', onPointerUp);
+      vp.removeEventListener('pointercancel', onPointerUp);
+    };
+  }, [apply, minScale, maxScale]);
+
+  const gridSvg = `url("data:image/svg+xml,%3Csvg width='120' height='120' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M120 0H0v120' fill='none' stroke='${encodeURIComponent(DC.grid)}' stroke-width='1'/%3E%3C/svg%3E")`;
+  return (
+    <div
+      ref={vpRef}
+      className="design-canvas"
+      style={{
+        height: '100vh', width: '100vw',
+        background: DC.bg,
+        overflow: 'hidden',
+        overscrollBehavior: 'none',
+        touchAction: 'none',
+        position: 'relative',
+        fontFamily: DC.font,
+        boxSizing: 'border-box',
+        ...style,
+      }}
+    >
+      <div
+        ref={worldRef}
+        style={{
+          position: 'absolute', top: 0, left: 0,
+          transformOrigin: '0 0',
+          willChange: 'transform',
+          width: 'max-content', minWidth: '100%',
+          minHeight: '100%',
+          padding: '60px 0 80px',
+        }}
+      >
+        <div style={{ position: 'absolute', inset: -6000, backgroundImage: gridSvg, backgroundSize: '120px 120px', pointerEvents: 'none', zIndex: -1 }} />
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// DCSection — editable title + h-row of artboards in persisted order
+// ─────────────────────────────────────────────────────────────
+function DCSection({ id, title, subtitle, children, gap = 48 }) {
+  const ctx = React.useContext(DCCtx);
+  const sid = id ?? title;
+  const all = React.Children.toArray(children);
+  const artboards = all.filter((c) => c && c.type === DCArtboard);
+  const rest = all.filter((c) => !(c && c.type === DCArtboard));
+  const srcOrder = artboards.map((a) => a.props.id ?? a.props.label);
+  const sec = (ctx && sid && ctx.section(sid)) || {};
+
+  const order = React.useMemo(() => {
+    const kept = (sec.order || []).filter((k) => srcOrder.includes(k));
+    return [...kept, ...srcOrder.filter((k) => !kept.includes(k))];
+  }, [sec.order, srcOrder.join('|')]);
+
+  const byId = Object.fromEntries(artboards.map((a) => [a.props.id ?? a.props.label, a]));
+
+  return (
+    <div data-dc-section={sid} style={{ marginBottom: 80, position: 'relative' }}>
+      <div style={{ padding: '0 60px 56px' }}>
+        <DCEditable tag="div" value={sec.title ?? title}
+          onChange={(v) => ctx && sid && ctx.patchSection(sid, { title: v })}
+          style={{ fontSize: 28, fontWeight: 600, color: DC.title, letterSpacing: -0.4, marginBottom: 6, display: 'inline-block' }} />
+        {subtitle && <div style={{ fontSize: 16, color: DC.subtitle }}>{subtitle}</div>}
+      </div>
+      <div style={{ display: 'flex', gap, padding: '0 60px', alignItems: 'flex-start', width: 'max-content' }}>
+        {order.map((k) => (
+          <DCArtboardFrame key={k} sectionId={sid} artboard={byId[k]} order={order}
+            label={(sec.labels || {})[k] ?? byId[k].props.label}
+            onRename={(v) => ctx && ctx.patchSection(sid, (x) => ({ labels: { ...x.labels, [k]: v } }))}
+            onReorder={(next) => ctx && ctx.patchSection(sid, { order: next })}
+            onFocus={() => ctx && ctx.setFocus(`${sid}/${k}`)} />
+        ))}
+      </div>
+      {rest}
+    </div>
+  );
+}
+
+// DCArtboard — marker; rendered by DCArtboardFrame via DCSection.
+function DCArtboard() { return null; }
+
+function DCArtboardFrame({ sectionId, artboard, label, order, onRename, onReorder, onFocus }) {
+  const { id: rawId, label: rawLabel, width = 260, height = 480, children, style = {} } = artboard.props;
+  const id = rawId ?? rawLabel;
+  const ref = React.useRef(null);
+
+  // Live drag-reorder: dragged card sticks to cursor; siblings slide into
+  // their would-be slots in real time via transforms. DOM order only
+  // changes on drop.
+  const onGripDown = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const me = ref.current;
+    // translateX is applied in local (pre-scale) space but pointer deltas and
+    // getBoundingClientRect().left are screen-space — divide by the viewport's
+    // current scale so the dragged card tracks the cursor at any zoom level.
+    const scale = me.getBoundingClientRect().width / me.offsetWidth || 1;
+    const peers = Array.from(document.querySelectorAll(`[data-dc-section="${sectionId}"] [data-dc-slot]`));
+    const homes = peers.map((el) => ({ el, id: el.dataset.dcSlot, x: el.getBoundingClientRect().left }));
+    const slotXs = homes.map((h) => h.x);
+    const startIdx = order.indexOf(id);
+    const startX = e.clientX;
+    let liveOrder = order.slice();
+    me.classList.add('dc-dragging');
+
+    const layout = () => {
+      for (const h of homes) {
+        if (h.id === id) continue;
+        const slot = liveOrder.indexOf(h.id);
+        h.el.style.transform = `translateX(${(slotXs[slot] - h.x) / scale}px)`;
+      }
+    };
+
+    const move = (ev) => {
+      const dx = ev.clientX - startX;
+      me.style.transform = `translateX(${dx / scale}px)`;
+      const cur = homes[startIdx].x + dx;
+      let nearest = 0, best = Infinity;
+      for (let i = 0; i < slotXs.length; i++) {
+        const d = Math.abs(slotXs[i] - cur);
+        if (d < best) { best = d; nearest = i; }
+      }
+      if (liveOrder.indexOf(id) !== nearest) {
+        liveOrder = order.filter((k) => k !== id);
+        liveOrder.splice(nearest, 0, id);
+        layout();
+      }
+    };
+
+    const up = () => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      const finalSlot = liveOrder.indexOf(id);
+      me.classList.remove('dc-dragging');
+      me.style.transform = `translateX(${(slotXs[finalSlot] - homes[startIdx].x) / scale}px)`;
+      // After the settle transition, kill transitions + clear transforms +
+      // commit the reorder in the same frame so there's no visual snap-back.
+      setTimeout(() => {
+        for (const h of homes) { h.el.style.transition = 'none'; h.el.style.transform = ''; }
+        if (liveOrder.join('|') !== order.join('|')) onReorder(liveOrder);
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          for (const h of homes) h.el.style.transition = '';
+        }));
+      }, 180);
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  };
+
+  return (
+    <div ref={ref} data-dc-slot={id} style={{ position: 'relative', flexShrink: 0 }}>
+      <div className="dc-labelrow" style={{ position: 'absolute', bottom: '100%', left: -4, marginBottom: 4, color: DC.label }}>
+        <div className="dc-grip" onPointerDown={onGripDown} title="Drag to reorder">
+          <svg width="9" height="13" viewBox="0 0 9 13" fill="currentColor"><circle cx="2" cy="2" r="1.1"/><circle cx="7" cy="2" r="1.1"/><circle cx="2" cy="6.5" r="1.1"/><circle cx="7" cy="6.5" r="1.1"/><circle cx="2" cy="11" r="1.1"/><circle cx="7" cy="11" r="1.1"/></svg>
+        </div>
+        <div className="dc-labeltext" onClick={onFocus} title="Click to focus">
+          <DCEditable value={label} onChange={onRename} onClick={(e) => e.stopPropagation()}
+            style={{ fontSize: 15, fontWeight: 500, color: DC.label, lineHeight: 1 }} />
+        </div>
+      </div>
+      <button className="dc-expand" onClick={onFocus} onPointerDown={(e) => e.stopPropagation()} title="Focus">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M7 1h4v4M5 11H1V7M11 1L7.5 4.5M1 11l3.5-3.5"/></svg>
+      </button>
+      <div className="dc-card"
+        style={{ borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,.08),0 4px 16px rgba(0,0,0,.06)', overflow: 'hidden', width, height, background: '#fff', ...style }}>
+        {children || <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb', fontSize: 13, fontFamily: DC.font }}>{id}</div>}
+      </div>
+    </div>
+  );
+}
+
+// Inline rename — commits on blur or Enter.
+function DCEditable({ value, onChange, style, tag = 'span', onClick }) {
+  const T = tag;
+  return (
+    <T className="dc-editable" contentEditable suppressContentEditableWarning
+      onClick={onClick}
+      onPointerDown={(e) => e.stopPropagation()}
+      onBlur={(e) => onChange && onChange(e.currentTarget.textContent)}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
+      style={style}>{value}</T>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Focus mode — overlay one artboard; ←/→ within section, ↑/↓ across
+// sections, Esc or backdrop click to exit.
+// ─────────────────────────────────────────────────────────────
+function DCFocusOverlay({ entry, sectionMeta, sectionOrder }) {
+  const ctx = React.useContext(DCCtx);
+  const { sectionId, artboard } = entry;
+  const sec = ctx.section(sectionId);
+  const meta = sectionMeta[sectionId];
+  const peers = meta.slotIds;
+  const aid = artboard.props.id ?? artboard.props.label;
+  const idx = peers.indexOf(aid);
+  const secIdx = sectionOrder.indexOf(sectionId);
+
+  const go = (d) => { const n = peers[(idx + d + peers.length) % peers.length]; if (n) ctx.setFocus(`${sectionId}/${n}`); };
+  const goSection = (d) => {
+    const ns = sectionOrder[(secIdx + d + sectionOrder.length) % sectionOrder.length];
+    const first = sectionMeta[ns] && sectionMeta[ns].slotIds[0];
+    if (first) ctx.setFocus(`${ns}/${first}`);
+  };
+
+  React.useEffect(() => {
+    const k = (e) => {
+      if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
+      if (e.key === 'ArrowUp') { e.preventDefault(); goSection(-1); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); goSection(1); }
+    };
+    document.addEventListener('keydown', k);
+    return () => document.removeEventListener('keydown', k);
+  });
+
+  const { width = 260, height = 480, children } = artboard.props;
+  const [vp, setVp] = React.useState({ w: window.innerWidth, h: window.innerHeight });
+  React.useEffect(() => { const r = () => setVp({ w: window.innerWidth, h: window.innerHeight }); window.addEventListener('resize', r); return () => window.removeEventListener('resize', r); }, []);
+  const scale = Math.max(0.1, Math.min((vp.w - 200) / width, (vp.h - 260) / height, 2));
+
+  const [ddOpen, setDd] = React.useState(false);
+  const Arrow = ({ dir, onClick }) => (
+    <button onClick={(e) => { e.stopPropagation(); onClick(); }}
+      style={{ position: 'absolute', top: '50%', [dir]: 28, transform: 'translateY(-50%)',
+        border: 'none', background: 'rgba(255,255,255,.08)', color: 'rgba(255,255,255,.9)',
+        width: 44, height: 44, borderRadius: 22, fontSize: 18, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .15s' }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,.18)')}
+      onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,.08)')}>
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <path d={dir === 'left' ? 'M11 3L5 9l6 6' : 'M7 3l6 6-6 6'} /></svg>
+    </button>
+  );
+
+  // Portal to body so position:fixed is the real viewport regardless of any
+  // transform on DesignCanvas's ancestors (including the canvas zoom itself).
+  return ReactDOM.createPortal(
+    <div onClick={() => ctx.setFocus(null)}
+      onWheel={(e) => e.preventDefault()}
+      style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(24,20,16,.6)', backdropFilter: 'blur(14px)',
+        fontFamily: DC.font, color: '#fff' }}>
+
+      {/* top bar: section dropdown (left) · close (right) */}
+      <div onClick={(e) => e.stopPropagation()}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 72, display: 'flex', alignItems: 'flex-start', padding: '16px 20px 0', gap: 16 }}>
+        <div style={{ position: 'relative' }}>
+          <button onClick={() => setDd((o) => !o)}
+            style={{ border: 'none', background: 'transparent', color: '#fff', cursor: 'pointer', padding: '6px 8px',
+              borderRadius: 6, textAlign: 'left', fontFamily: 'inherit' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: -0.3 }}>{meta.title}</span>
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" style={{ opacity: .7 }}><path d="M2 4l3.5 3.5L9 4"/></svg>
+            </span>
+            {meta.subtitle && <span style={{ display: 'block', fontSize: 13, opacity: .6, fontWeight: 400, marginTop: 2 }}>{meta.subtitle}</span>}
+          </button>
+          {ddOpen && (
+            <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, background: '#2a251f', borderRadius: 8,
+              boxShadow: '0 8px 32px rgba(0,0,0,.4)', padding: 4, minWidth: 200, zIndex: 10 }}>
+              {sectionOrder.map((sid) => (
+                <button key={sid} onClick={() => { setDd(false); const f = sectionMeta[sid].slotIds[0]; if (f) ctx.setFocus(`${sid}/${f}`); }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer',
+                    background: sid === sectionId ? 'rgba(255,255,255,.1)' : 'transparent', color: '#fff',
+                    padding: '8px 12px', borderRadius: 5, fontSize: 14, fontWeight: sid === sectionId ? 600 : 400, fontFamily: 'inherit' }}>
+                  {sectionMeta[sid].title}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div style={{ flex: 1 }} />
+        <button onClick={() => ctx.setFocus(null)}
+          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,.12)')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+          style={{ border: 'none', background: 'transparent', color: 'rgba(255,255,255,.7)', width: 32, height: 32,
+            borderRadius: 16, fontSize: 20, cursor: 'pointer', lineHeight: 1, transition: 'background .12s' }}>×</button>
+      </div>
+
+      {/* card centered, label + index below — only the card itself stops
+          propagation so any backdrop click (including the margins around
+          the card) exits focus */}
+      <div
+        style={{ position: 'absolute', top: 64, bottom: 56, left: 100, right: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+        <div onClick={(e) => e.stopPropagation()} style={{ width: width * scale, height: height * scale, position: 'relative' }}>
+          <div style={{ width, height, transform: `scale(${scale})`, transformOrigin: 'top left', background: '#fff', borderRadius: 2, overflow: 'hidden',
+            boxShadow: '0 20px 80px rgba(0,0,0,.4)' }}>
+            {children || <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb' }}>{aid}</div>}
+          </div>
+        </div>
+        <div onClick={(e) => e.stopPropagation()} style={{ fontSize: 14, fontWeight: 500, opacity: .85, textAlign: 'center' }}>
+          {(sec.labels || {})[aid] ?? artboard.props.label}
+          <span style={{ opacity: .5, marginLeft: 10, fontVariantNumeric: 'tabular-nums' }}>{idx + 1} / {peers.length}</span>
+        </div>
+      </div>
+
+      <Arrow dir="left" onClick={() => go(-1)} />
+      <Arrow dir="right" onClick={() => go(1)} />
+
+      {/* dots */}
+      <div onClick={(e) => e.stopPropagation()}
+        style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 8 }}>
+        {peers.map((p, i) => (
+          <button key={p} onClick={() => ctx.setFocus(`${sectionId}/${p}`)}
+            style={{ border: 'none', padding: 0, cursor: 'pointer', width: 6, height: 6, borderRadius: 3,
+              background: i === idx ? '#fff' : 'rgba(255,255,255,.3)' }} />
+        ))}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Post-it — absolute-positioned sticky note
+// ─────────────────────────────────────────────────────────────
+function DCPostIt({ children, top, left, right, bottom, rotate = -2, width = 180 }) {
+  return (
+    <div style={{
+      position: 'absolute', top, left, right, bottom, width,
+      background: DC.postitBg, padding: '14px 16px',
+      fontFamily: '"Comic Sans MS", "Marker Felt", "Segoe Print", cursive',
+      fontSize: 14, lineHeight: 1.4, color: DC.postitText,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08)',
+      transform: `rotate(${rotate}deg)`,
+      zIndex: 5,
+    }}>{children}</div>
+  );
+}
+
+Object.assign(window, { DesignCanvas, DCSection, DCArtboard, DCPostIt });
+
+
+
+// tweaks-panel.jsx
+// Reusable Tweaks shell + form-control helpers.
+//
+// Owns the host protocol (listens for __activate_edit_mode / __deactivate_edit_mode,
+// posts __edit_mode_available / __edit_mode_set_keys / __edit_mode_dismissed) so
+// individual prototypes don't re-roll it. Ships a consistent set of controls so you
+// don't hand-draw <input type="range">, segmented radios, steppers, etc.
+//
+// Usage (in an HTML file that loads React + Babel):
+//
+//   const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+//     "primaryColor": "#D97757",
+//     "fontSize": 16,
+//     "density": "regular",
+//     "dark": false
+//   }/*EDITMODE-END*/;
+//
+//   function App() {
+//     const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+//     return (
+//       <div style={{ fontSize: t.fontSize, color: t.primaryColor }}>
+//         Hello
+//         <TweaksPanel>
+//           <TweakSection label="Typography" />
+//           <TweakSlider label="Font size" value={t.fontSize} min={10} max={32} unit="px"
+//                        onChange={(v) => setTweak('fontSize', v)} />
+//           <TweakRadio  label="Density" value={t.density}
+//                        options={['compact', 'regular', 'comfy']}
+//                        onChange={(v) => setTweak('density', v)} />
+//           <TweakSection label="Theme" />
+//           <TweakColor  label="Primary" value={t.primaryColor}
+//                        onChange={(v) => setTweak('primaryColor', v)} />
+//           <TweakToggle label="Dark mode" value={t.dark}
+//                        onChange={(v) => setTweak('dark', v)} />
+//         </TweaksPanel>
+//       </div>
+//     );
+//   }
+//
+// ─────────────────────────────────────────────────────────────────────────────
+
+const __TWEAKS_STYLE = `
+  .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
+    max-height:calc(100vh - 32px);display:flex;flex-direction:column;
+    background:rgba(250,249,247,.78);color:#29261b;
+    -webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);
+    border:.5px solid rgba(255,255,255,.6);border-radius:14px;
+    box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 12px 40px rgba(0,0,0,.18);
+    font:11.5px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif;overflow:hidden}
+  .twk-hd{display:flex;align-items:center;justify-content:space-between;
+    padding:10px 8px 10px 14px;cursor:move;user-select:none}
+  .twk-hd b{font-size:12px;font-weight:600;letter-spacing:.01em}
+  .twk-x{appearance:none;border:0;background:transparent;color:rgba(41,38,27,.55);
+    width:22px;height:22px;border-radius:6px;cursor:default;font-size:13px;line-height:1}
+  .twk-x:hover{background:rgba(0,0,0,.06);color:#29261b}
+  .twk-body{padding:2px 14px 14px;display:flex;flex-direction:column;gap:10px;
+    overflow-y:auto;overflow-x:hidden;min-height:0;
+    scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.15) transparent}
+  .twk-body::-webkit-scrollbar{width:8px}
+  .twk-body::-webkit-scrollbar-track{background:transparent;margin:2px}
+  .twk-body::-webkit-scrollbar-thumb{background:rgba(0,0,0,.15);border-radius:4px;
+    border:2px solid transparent;background-clip:content-box}
+  .twk-body::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,.25);
+    border:2px solid transparent;background-clip:content-box}
+  .twk-row{display:flex;flex-direction:column;gap:5px}
+  .twk-row-h{flex-direction:row;align-items:center;justify-content:space-between;gap:10px}
+  .twk-lbl{display:flex;justify-content:space-between;align-items:baseline;
+    color:rgba(41,38,27,.72)}
+  .twk-lbl>span:first-child{font-weight:500}
+  .twk-val{color:rgba(41,38,27,.5);font-variant-numeric:tabular-nums}
+
+  .twk-sect{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+    color:rgba(41,38,27,.45);padding:10px 0 0}
+  .twk-sect:first-child{padding-top:0}
+
+  .twk-field{appearance:none;width:100%;height:26px;padding:0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;
+    background:rgba(255,255,255,.6);color:inherit;font:inherit;outline:none}
+  .twk-field:focus{border-color:rgba(0,0,0,.25);background:rgba(255,255,255,.85)}
+  select.twk-field{padding-right:22px;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='rgba(0,0,0,.5)' d='M0 0h10L5 6z'/></svg>");
+    background-repeat:no-repeat;background-position:right 8px center}
+
+  .twk-slider{appearance:none;-webkit-appearance:none;width:100%;height:4px;margin:6px 0;
+    border-radius:999px;background:rgba(0,0,0,.12);outline:none}
+  .twk-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:14px;height:14px;border-radius:50%;background:#fff;
+    border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+  .twk-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
+    background:#fff;border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+
+  .twk-seg{position:relative;display:flex;padding:2px;border-radius:8px;
+    background:rgba(0,0,0,.06);user-select:none}
+  .twk-seg-thumb{position:absolute;top:2px;bottom:2px;border-radius:6px;
+    background:rgba(255,255,255,.9);box-shadow:0 1px 2px rgba(0,0,0,.12);
+    transition:left .15s cubic-bezier(.3,.7,.4,1),width .15s}
+  .twk-seg.dragging .twk-seg-thumb{transition:none}
+  .twk-seg button{appearance:none;position:relative;z-index:1;flex:1;border:0;
+    background:transparent;color:inherit;font:inherit;font-weight:500;min-height:22px;
+    border-radius:6px;cursor:default;padding:4px 6px;line-height:1.2;
+    overflow-wrap:anywhere}
+
+  .twk-toggle{position:relative;width:32px;height:18px;border:0;border-radius:999px;
+    background:rgba(0,0,0,.15);transition:background .15s;cursor:default;padding:0}
+  .twk-toggle[data-on="1"]{background:#34c759}
+  .twk-toggle i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+    background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+  .twk-toggle[data-on="1"] i{transform:translateX(14px)}
+
+  .twk-num{display:flex;align-items:center;height:26px;padding:0 0 0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;background:rgba(255,255,255,.6)}
+  .twk-num-lbl{font-weight:500;color:rgba(41,38,27,.6);cursor:ew-resize;
+    user-select:none;padding-right:8px}
+  .twk-num input{flex:1;min-width:0;height:100%;border:0;background:transparent;
+    font:inherit;font-variant-numeric:tabular-nums;text-align:right;padding:0 8px 0 0;
+    outline:none;color:inherit;-moz-appearance:textfield}
+  .twk-num input::-webkit-inner-spin-button,.twk-num input::-webkit-outer-spin-button{
+    -webkit-appearance:none;margin:0}
+  .twk-num-unit{padding-right:8px;color:rgba(41,38,27,.45)}
+
+  .twk-btn{appearance:none;height:26px;padding:0 12px;border:0;border-radius:7px;
+    background:rgba(0,0,0,.78);color:#fff;font:inherit;font-weight:500;cursor:default}
+  .twk-btn:hover{background:rgba(0,0,0,.88)}
+  .twk-btn.secondary{background:rgba(0,0,0,.06);color:inherit}
+  .twk-btn.secondary:hover{background:rgba(0,0,0,.1)}
+
+  .twk-swatch{appearance:none;-webkit-appearance:none;width:56px;height:22px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:6px;padding:0;cursor:default;
+    background:transparent;flex-shrink:0}
+  .twk-swatch::-webkit-color-swatch-wrapper{padding:0}
+  .twk-swatch::-webkit-color-swatch{border:0;border-radius:5.5px}
+  .twk-swatch::-moz-color-swatch{border:0;border-radius:5.5px}
+`;
+
+// ── useTweaks ───────────────────────────────────────────────────────────────
+// Single source of truth for tweak values. setTweak persists via the host
+// (__edit_mode_set_keys → host rewrites the EDITMODE block on disk).
+function useTweaks(defaults) {
+  const [values, setValues] = React.useState(defaults);
+  // Accepts either setTweak('key', value) or setTweak({ key: value, ... }) so a
+  // useState-style call doesn't write a "[object Object]" key into the persisted
+  // JSON block.
+  const setTweak = React.useCallback((keyOrEdits, val) => {
+    const edits = typeof keyOrEdits === 'object' && keyOrEdits !== null
+      ? keyOrEdits : { [keyOrEdits]: val };
+    setValues((prev) => ({ ...prev, ...edits }));
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits }, '*');
+  }, []);
+  return [values, setTweak];
+}
+
+// ── TweaksPanel ─────────────────────────────────────────────────────────────
+// Floating shell. Registers the protocol listener BEFORE announcing
+// availability — if the announce ran first, the host's activate could land
+// before our handler exists and the toolbar toggle would silently no-op.
+// The close button posts __edit_mode_dismissed so the host's toolbar toggle
+// flips off in lockstep; the host echoes __deactivate_edit_mode back which
+// is what actually hides the panel.
+function TweaksPanel({ title = 'Tweaks', children }) {
+  const [open, setOpen] = React.useState(false);
+  const dragRef = React.useRef(null);
+  const offsetRef = React.useRef({ x: 16, y: 16 });
+  const PAD = 16;
+
+  const clampToViewport = React.useCallback(() => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const w = panel.offsetWidth, h = panel.offsetHeight;
+    const maxRight = Math.max(PAD, window.innerWidth - w - PAD);
+    const maxBottom = Math.max(PAD, window.innerHeight - h - PAD);
+    offsetRef.current = {
+      x: Math.min(maxRight, Math.max(PAD, offsetRef.current.x)),
+      y: Math.min(maxBottom, Math.max(PAD, offsetRef.current.y)),
+    };
+    panel.style.right = offsetRef.current.x + 'px';
+    panel.style.bottom = offsetRef.current.y + 'px';
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) return;
+    clampToViewport();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', clampToViewport);
+      return () => window.removeEventListener('resize', clampToViewport);
+    }
+    const ro = new ResizeObserver(clampToViewport);
+    ro.observe(document.documentElement);
+    return () => ro.disconnect();
+  }, [open, clampToViewport]);
+
+  React.useEffect(() => {
+    const onMsg = (e) => {
+      const t = e?.data?.type;
+      if (t === '__activate_edit_mode') setOpen(true);
+      else if (t === '__deactivate_edit_mode') setOpen(false);
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  const dismiss = () => {
+    setOpen(false);
+    window.parent.postMessage({ type: '__edit_mode_dismissed' }, '*');
+  };
+
+  const onDragStart = (e) => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const r = panel.getBoundingClientRect();
+    const sx = e.clientX, sy = e.clientY;
+    const startRight = window.innerWidth - r.right;
+    const startBottom = window.innerHeight - r.bottom;
+    const move = (ev) => {
+      offsetRef.current = {
+        x: startRight - (ev.clientX - sx),
+        y: startBottom - (ev.clientY - sy),
+      };
+      clampToViewport();
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  if (!open) return null;
+  return (
+    <>
+      <style>{__TWEAKS_STYLE}</style>
+      <div ref={dragRef} className="twk-panel"
+           style={{ right: offsetRef.current.x, bottom: offsetRef.current.y }}>
+        <div className="twk-hd" onMouseDown={onDragStart}>
+          <b>{title}</b>
+          <button className="twk-x" aria-label="Close tweaks"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={dismiss}>✕</button>
+        </div>
+        <div className="twk-body">{children}</div>
+      </div>
+    </>
+  );
+}
+
+// ── Layout helpers ──────────────────────────────────────────────────────────
+
+function TweakSection({ label, children }) {
+  return (
+    <>
+      <div className="twk-sect">{label}</div>
+      {children}
+    </>
+  );
+}
+
+function TweakRow({ label, value, children, inline = false }) {
+  return (
+    <div className={inline ? 'twk-row twk-row-h' : 'twk-row'}>
+      <div className="twk-lbl">
+        <span>{label}</span>
+        {value != null && <span className="twk-val">{value}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ── Controls ────────────────────────────────────────────────────────────────
+
+function TweakSlider({ label, value, min = 0, max = 100, step = 1, unit = '', onChange }) {
+  return (
+    <TweakRow label={label} value={`${value}${unit}`}>
+      <input type="range" className="twk-slider" min={min} max={max} step={step}
+             value={value} onChange={(e) => onChange(Number(e.target.value))} />
+    </TweakRow>
+  );
+}
+
+function TweakToggle({ label, value, onChange }) {
+  return (
+    <div className="twk-row twk-row-h">
+      <div className="twk-lbl"><span>{label}</span></div>
+      <button type="button" className="twk-toggle" data-on={value ? '1' : '0'}
+              role="switch" aria-checked={!!value}
+              onClick={() => onChange(!value)}><i /></button>
+    </div>
+  );
+}
+
+function TweakRadio({ label, value, options, onChange }) {
+  const trackRef = React.useRef(null);
+  const [dragging, setDragging] = React.useState(false);
+  const opts = options.map((o) => (typeof o === 'object' ? o : { value: o, label: o }));
+  const idx = Math.max(0, opts.findIndex((o) => o.value === value));
+  const n = opts.length;
+
+  // The active value is read by pointer-move handlers attached for the lifetime
+  // of a drag — ref it so a stale closure doesn't fire onChange for every move.
+  const valueRef = React.useRef(value);
+  valueRef.current = value;
+
+  const segAt = (clientX) => {
+    const r = trackRef.current.getBoundingClientRect();
+    const inner = r.width - 4;
+    const i = Math.floor(((clientX - r.left - 2) / inner) * n);
+    return opts[Math.max(0, Math.min(n - 1, i))].value;
+  };
+
+  const onPointerDown = (e) => {
+    setDragging(true);
+    const v0 = segAt(e.clientX);
+    if (v0 !== valueRef.current) onChange(v0);
+    const move = (ev) => {
+      if (!trackRef.current) return;
+      const v = segAt(ev.clientX);
+      if (v !== valueRef.current) onChange(v);
+    };
+    const up = () => {
+      setDragging(false);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  return (
+    <TweakRow label={label}>
+      <div ref={trackRef} role="radiogroup" onPointerDown={onPointerDown}
+           className={dragging ? 'twk-seg dragging' : 'twk-seg'}>
+        <div className="twk-seg-thumb"
+             style={{ left: `calc(2px + ${idx} * (100% - 4px) / ${n})`,
+                      width: `calc((100% - 4px) / ${n})` }} />
+        {opts.map((o) => (
+          <button key={o.value} type="button" role="radio" aria-checked={o.value === value}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </TweakRow>
+  );
+}
+
+function TweakSelect({ label, value, options, onChange }) {
+  return (
+    <TweakRow label={label}>
+      <select className="twk-field" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((o) => {
+          const v = typeof o === 'object' ? o.value : o;
+          const l = typeof o === 'object' ? o.label : o;
+          return <option key={v} value={v}>{l}</option>;
+        })}
+      </select>
+    </TweakRow>
+  );
+}
+
+function TweakText({ label, value, placeholder, onChange }) {
+  return (
+    <TweakRow label={label}>
+      <input className="twk-field" type="text" value={value} placeholder={placeholder}
+             onChange={(e) => onChange(e.target.value)} />
+    </TweakRow>
+  );
+}
+
+function TweakNumber({ label, value, min, max, step = 1, unit = '', onChange }) {
+  const clamp = (n) => {
+    if (min != null && n < min) return min;
+    if (max != null && n > max) return max;
+    return n;
+  };
+  const startRef = React.useRef({ x: 0, val: 0 });
+  const onScrubStart = (e) => {
+    e.preventDefault();
+    startRef.current = { x: e.clientX, val: value };
+    const decimals = (String(step).split('.')[1] || '').length;
+    const move = (ev) => {
+      const dx = ev.clientX - startRef.current.x;
+      const raw = startRef.current.val + dx * step;
+      const snapped = Math.round(raw / step) * step;
+      onChange(clamp(Number(snapped.toFixed(decimals))));
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  return (
+    <div className="twk-num">
+      <span className="twk-num-lbl" onPointerDown={onScrubStart}>{label}</span>
+      <input type="number" value={value} min={min} max={max} step={step}
+             onChange={(e) => onChange(clamp(Number(e.target.value)))} />
+      {unit && <span className="twk-num-unit">{unit}</span>}
+    </div>
+  );
+}
+
+function TweakColor({ label, value, onChange }) {
+  return (
+    <div className="twk-row twk-row-h">
+      <div className="twk-lbl"><span>{label}</span></div>
+      <input type="color" className="twk-swatch" value={value}
+             onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+function TweakButton({ label, onClick, secondary = false }) {
+  return (
+    <button type="button" className={secondary ? 'twk-btn secondary' : 'twk-btn'}
+            onClick={onClick}>{label}</button>
+  );
+}
+
+Object.assign(window, {
+  useTweaks, TweaksPanel, TweakSection, TweakRow,
+  TweakSlider, TweakToggle, TweakRadio, TweakSelect,
+  TweakText, TweakNumber, TweakColor, TweakButton,
+});
+
+// Shared mock data + small UI primitives used across the three artboards.
+
+const MOCK_PEOPLE = [
+  { id: 'wu', name: '吳謹妤', initials: '吳', role: 'Brand Marketing · Taiwan Mobile', cat: 'Friend', tone: 'amber', lastNote: 'Decided to leave current role, exploring brand strategy at consumer-tech companies.', lastDays: 7, cadenceDays: 30, topics: ['job transition', 'wants brand strategy roles'], next: 'Ask how the offer conversation with Dolphin went' },
+  { id: 'lin-zy', name: '林資堯', initials: '林', role: 'Job Seeker · Teacher in France', cat: 'Friend', tone: 'sage', lastNote: 'Returning to Paris next month; involved with the Art of Hosting community.', lastDays: 12, cadenceDays: 45, topics: ['moving back to Paris', 'Art of Hosting'], next: 'Check in on the Paris move' },
+  { id: 'lu', name: '盧宛翎', initials: '盧', role: 'Marketing Job Seeker', cat: 'Friend', tone: 'rose', lastNote: '搬從大阪回來，準備找日商行銷工作；可能再考一次 JLPT。', lastDays: 18, cadenceDays: 60, topics: ['back from Osaka', 'JLPT prep', 'job search'], next: 'Ask how JLPT prep is going' },
+  { id: 'lin-zh', name: '林志臻', initials: '林', role: 'Ex-PM in manga industry', cat: 'Friend', tone: 'plum', lastNote: 'Left Kadokawa, taking a sabbatical before deciding next move.', lastDays: 35, cadenceDays: 60, topics: ['sabbatical', 'considering indie work'], next: 'Sabbatical check-in' },
+  { id: 'martin', name: 'Martin Xiao', initials: 'MX', role: 'Legislative Intern', cat: 'Friend', tone: 'sage', lastNote: 'Finishing thesis on civic tech; might apply for Code for Taiwan fellowship.', lastDays: 22, cadenceDays: 60, topics: ['thesis', 'civic tech fellowship'], next: 'How is the fellowship app going?' },
+  { id: 'liao', name: '廖瑞儀', initials: '廖', role: 'Rock Climbing Enthusiast', cat: 'Friend', tone: 'rose', lastNote: '上週和我們一起去龍洞；說想開始嘗試多繩距路線。', lastDays: 95, cadenceDays: 60, topics: ['multi-pitch climbing', '龍洞'], next: 'See if she actually got to do multi-pitch' },
+  { id: 'yang', name: '楊尹甄', initials: '楊', role: 'Traveler & Craft Enthusiast', cat: 'Friend', tone: 'sage', lastNote: 'Just back from Kyoto pottery residency; planning a small ceramics market in Q3.', lastDays: 5, cadenceDays: 90, topics: ['ceramics market', 'Kyoto residency'], next: '' },
+  { id: 'wu-jw', name: '吳謹妤', initials: '吳', role: 'Brand Marketing', cat: 'Friend', tone: 'amber', lastNote: '', lastDays: 0, cadenceDays: 30, topics: [], next: '' },
+  { id: 'emily', name: 'Emily Chen', initials: 'EC', role: 'Graduate Student Candidate', cat: 'Colleague', tone: 'sage', lastNote: 'Considering law school in the US; deciding between Berkeley and NYU.', lastDays: 50, cadenceDays: 75, topics: ['law school', 'Berkeley vs NYU'], next: 'Decision deadline soon' },
+];
+
+const TONES = {
+  amber: { bg: '#F4E4C9', fg: '#7A5A2E' },
+  sage:  { bg: '#D9DFD0', fg: '#4A5238' },
+  rose:  { bg: '#EBD3CB', fg: '#7A4A40' },
+  plum:  { bg: '#DCD0DA', fg: '#5A4860' },
+  ink:   { bg: '#D2D8E0', fg: '#3A4658' },
+};
+
+function Avatar({ initials, tone = 'sage', size = 40 }) {
+  const t = TONES[tone] || TONES.sage;
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: '50%',
+      background: t.bg, color: t.fg,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontWeight: 500, fontSize: size * 0.4, flexShrink: 0,
+      letterSpacing: initials.length > 2 ? '-0.02em' : 0,
+    }}>{initials}</div>
+  );
+}
+
+function CategoryPill({ cat }) {
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 600, letterSpacing: '0.08em',
+      textTransform: 'uppercase',
+      padding: '3px 8px', borderRadius: 4,
+      background: 'rgba(92,107,78,0.12)', color: '#5C6B4E',
+    }}>{cat}</span>
+  );
+}
+
+function Tag({ children, tone = 'neutral' }) {
+  const palettes = {
+    neutral: { bg: 'rgba(60,50,40,0.06)', fg: '#5A4A3A' },
+    accent:  { bg: 'rgba(92,107,78,0.10)', fg: '#5C6B4E' },
+  };
+  const p = palettes[tone];
+  return (
+    <span style={{
+      fontSize: 11, padding: '3px 9px', borderRadius: 999,
+      background: p.bg, color: p.fg, whiteSpace: 'nowrap',
+    }}>{children}</span>
+  );
+}
+
+function ChannelIcon({ kind, size = 14 }) {
+  const props = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none' };
+  if (kind === 'line') return (<svg {...props}><circle cx="12" cy="11" r="9" stroke="currentColor" strokeWidth="1.6"/><path d="M8 14V9M16 9V14M12 9V14M8 9h2M16 9h-2M5 18l3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>);
+  if (kind === 'ig')   return (<svg {...props}><rect x="3" y="3" width="18" height="18" rx="5" stroke="currentColor" strokeWidth="1.6"/><circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.6"/><circle cx="17" cy="7" r="1" fill="currentColor"/></svg>);
+  if (kind === 'fb')   return (<svg {...props}><path d="M14 8h2V5h-2c-1.7 0-3 1.3-3 3v2H9v3h2v8h3v-8h2.5l.5-3H14v-2c0-.6.4-1 1-1z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/></svg>);
+  if (kind === 'wa')   return (<svg {...props}><path d="M3 21l1.5-4.5A8 8 0 1 1 8 20.5L3 21z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/><path d="M9 10c.5 2 2 3.5 4 4l1.5-1.5 2.5 1v2c0 1-1 1.5-2 1.5-4 0-7-3-7-7 0-1 .5-2 1.5-2h2l1 2.5L9 10z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/></svg>);
+  if (kind === 'sms')  return (<svg {...props}><path d="M4 6h16v10H8l-4 4V6z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/><circle cx="9" cy="11" r="1" fill="currentColor"/><circle cx="12" cy="11" r="1" fill="currentColor"/><circle cx="15" cy="11" r="1" fill="currentColor"/></svg>);
+  return null;
+}
+
+Object.assign(window, { MOCK_PEOPLE, TONES, Avatar, CategoryPill, Tag, ChannelIcon });
+
+// Dashboard "After" — A+B route with Today (3) + Spotlight + folded more.
+
+function DashboardAfter({ userName = 'Patrick', accent = '#5C6B4E', accentSoft = 'rgba(92,107,78,0.10)' }) {
+  const [doneIds, setDoneIds] = React.useState(new Set());
+  const [snoozeOpen, setSnoozeOpen] = React.useState(null);
+  const [showMore, setShowMore] = React.useState(false);
+
+  const todays = [
+    { id: 't1', person: MOCK_PEOPLE[0], topic: '上次提到正在離職、想找品牌策略類的工作', daysSince: 7 },
+    { id: 't2', person: MOCK_PEOPLE[1], topic: '下個月要搬回 Paris、最近在做 Art of Hosting', daysSince: 12 },
+    { id: 't3', person: MOCK_PEOPLE[2], topic: '從大阪回來找日商行銷工作，可能再考一次 JLPT', daysSince: 18 },
+  ];
+
+  const moreCount = 12;
+  const moreList = MOCK_PEOPLE.slice(3, 9).map((p, i) => ({
+    id: 'm' + i, person: p, daysOver: [4, 9, 15, 22, 30, 41][i] || 7,
+  }));
+
+  // Spotlight: today is 楊尹甄 — her profile hasn't been updated in a while
+  const spotlight = {
+    type: 'profile-stale',
+    person: MOCK_PEOPLE[6],
+    months: 6,
+  };
+
+  const upcomingBdays = [
+    { name: '林毅宇', days: 8, date: 'May 7' },
+    { name: 'Michelle Chien', days: 14, date: 'May 13' },
+  ];
+
+  function handleDone(id) {
+    setDoneIds(prev => new Set(prev).add(id));
+  }
+  function handleSnooze(id, label) {
+    setDoneIds(prev => new Set(prev).add(id));
+    setSnoozeOpen(null);
+  }
+
+  const visibleTodays = todays.filter(t => !doneIds.has(t.id));
+  const allDone = visibleTodays.length === 0;
+
+  return (
+    <div style={{
+      width: 1440, height: 900, background: '#F5F1EA',
+      fontFamily: '"Inter", "Noto Sans TC", -apple-system, sans-serif',
+      color: '#2A251F', display: 'flex', flexDirection: 'column',
+      overflow: 'hidden',
+    }}>
+      <TopNav active="dashboard" accent={accent} />
+      <div style={{ flex: 1, overflowY: 'auto', padding: '40px 80px 60px' }}>
+        <div style={{ maxWidth: 880, margin: '0 auto' }}>
+          {/* Greeting */}
+          <div style={{ marginBottom: 36 }}>
+            <div style={{ fontSize: 12, color: '#8B7F70', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>
+              Wednesday, April 29
+            </div>
+            <h1 style={{ fontSize: 44, fontWeight: 500, margin: 0, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+              Good morning, {userName}.
+            </h1>
+            <p style={{ fontSize: 16, color: '#6B6055', margin: '12px 0 0', lineHeight: 1.5 }}>
+              {allDone ? 'You\'re caught up. Nice work today.' : `${visibleTodays.length} people you might want to reach today.`}
+            </p>
+          </div>
+
+          {/* Today's 3 */}
+          <section style={{ marginBottom: 40 }}>
+            <div style={{
+              display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+              marginBottom: 14,
+            }}>
+              <h2 style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: accent, margin: 0 }}>
+                Today · {visibleTodays.length}
+              </h2>
+              <span style={{ fontSize: 12, color: '#8B7F70' }}>{moreCount} more waiting</span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {todays.map(t => (
+                <FollowUpCard
+                  key={t.id} item={t}
+                  done={doneIds.has(t.id)}
+                  snoozeOpen={snoozeOpen === t.id}
+                  onSnoozeToggle={() => setSnoozeOpen(snoozeOpen === t.id ? null : t.id)}
+                  onSnooze={(label) => handleSnooze(t.id, label)}
+                  onDone={() => handleDone(t.id)}
+                  accent={accent} accentSoft={accentSoft}
+                />
+              ))}
+            </div>
+
+            {/* Show more */}
+            <div style={{ marginTop: 16 }}>
+              {!showMore ? (
+                <button onClick={() => setShowMore(true)} style={{
+                  background: 'transparent', border: 'none', cursor: 'pointer',
+                  color: '#8B7F70', fontSize: 13, padding: '8px 0',
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  fontFamily: 'inherit',
+                }}>
+                  <span>+ {moreCount} more people you haven't talked to in a while</span>
+                  <span style={{ opacity: 0.6 }}>▾</span>
+                </button>
+              ) : (
+                <div style={{ marginTop: 8, padding: '4px 0', borderTop: '1px solid rgba(60,50,40,0.08)' }}>
+                  <div style={{ fontSize: 11, color: '#8B7F70', letterSpacing: '0.06em', textTransform: 'uppercase', padding: '14px 0 10px' }}>
+                    Been a while
+                  </div>
+                  {moreList.map(m => (
+                    <div key={m.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 14,
+                      padding: '12px 4px',
+                      borderBottom: '1px solid rgba(60,50,40,0.05)',
+                      cursor: 'pointer',
+                    }}>
+                      <Avatar initials={m.person.initials} tone={m.person.tone} size={32} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 500 }}>{m.person.name}</div>
+                        <div style={{ fontSize: 12, color: '#8B7F70', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {m.person.role}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 12, color: '#8B7F70' }}>~{m.daysOver}w since you talked</div>
+                    </div>
+                  ))}
+                  <button onClick={() => setShowMore(false)} style={{
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    color: '#8B7F70', fontSize: 13, padding: '12px 0', fontFamily: 'inherit',
+                  }}>Hide</button>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Spotlight */}
+          <section style={{ marginBottom: 40 }}>
+            <h2 style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: accent, margin: '0 0 14px' }}>
+              Spotlight
+            </h2>
+            <SpotlightCard spotlight={spotlight} accent={accent} accentSoft={accentSoft} />
+          </section>
+
+          {/* This week */}
+          <section style={{ marginBottom: 40 }}>
+            <h2 style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: accent, margin: '0 0 14px' }}>
+              This week
+            </h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {upcomingBdays.map((b, i) => (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'center', gap: 14,
+                  padding: '14px 18px',
+                  background: '#FBF8F3',
+                  border: '1px solid rgba(60,50,40,0.06)',
+                  borderRadius: 10,
+                }}>
+                  <span style={{ fontSize: 18 }}>🎂</span>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontSize: 14, fontWeight: 500 }}>{b.name}</span>
+                    <span style={{ fontSize: 14, color: '#6B6055' }}>{`'s birthday`}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#8B7F70' }}>{b.date} · in {b.days} days</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TopNav({ active, accent }) {
+  const link = (label, key) => (
+    <a key={key} style={{
+      fontSize: 14, fontWeight: 500, color: active === key ? '#1A1612' : '#8B7F70',
+      textDecoration: 'none', cursor: 'pointer',
+      padding: '8px 16px', borderRadius: 999,
+      background: active === key ? '#1A1612' : 'transparent',
+      ...(active === key ? { color: '#F5F1EA' } : {}),
+    }}>{label}</a>
+  );
+  return (
+    <header style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '18px 32px',
+      borderBottom: '1px solid rgba(60,50,40,0.06)',
+      background: '#FBF8F3',
+    }}>
+      <div style={{ fontWeight: 600, fontSize: 15, letterSpacing: '-0.01em' }}>people<span style={{ color: accent }}>.crm</span></div>
+      <nav style={{ display: 'flex', gap: 4 }}>
+        {link('Dashboard', 'dashboard')}
+        {link('Contacts', 'contacts')}
+      </nav>
+      <button style={{
+        background: accent, color: '#F5F1EA', border: 'none',
+        padding: '9px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500,
+        cursor: 'pointer', fontFamily: 'inherit',
+      }}>+ New contact</button>
+    </header>
+  );
+}
+
+function FollowUpCard({ item, done, snoozeOpen, onSnoozeToggle, onSnooze, onDone, accent, accentSoft }) {
+  const { person, topic, daysSince } = item;
+  return (
+    <div style={{
+      padding: '20px 22px',
+      background: done ? 'transparent' : '#FBF8F3',
+      border: `1px solid ${done ? 'rgba(60,50,40,0.04)' : 'rgba(60,50,40,0.07)'}`,
+      borderRadius: 12,
+      opacity: done ? 0.45 : 1,
+      transition: 'all 0.25s ease',
+      position: 'relative',
+    }}>
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+        <Avatar initials={person.initials} tone={person.tone} size={42} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 4 }}>
+            <span style={{ fontSize: 16, fontWeight: 500, textDecoration: done ? 'line-through' : 'none' }}>{person.name}</span>
+            <span style={{ fontSize: 12, color: '#8B7F70' }}>{person.role}</span>
+            <span style={{ fontSize: 12, color: '#A89F90', marginLeft: 'auto' }}>{daysSince}d since you talked</span>
+          </div>
+          <div style={{
+            fontSize: 13, color: '#6B6055', lineHeight: 1.5,
+            display: 'flex', gap: 8, marginTop: 6,
+          }}>
+            <span style={{ color: accent, fontSize: 11, marginTop: 4, flexShrink: 0, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600 }}>Last</span>
+            <span>{topic}</span>
+          </div>
+
+          {!done && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 16, alignItems: 'center', position: 'relative' }}>
+              <button style={{
+                background: '#1A1612', color: '#F5F1EA', border: 'none',
+                padding: '8px 14px', borderRadius: 7, fontSize: 12, fontWeight: 500,
+                cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
+                fontFamily: 'inherit',
+              }}>
+                <ChannelIcon kind="line" size={13} />
+                Open LINE
+              </button>
+              <button onClick={onDone} style={{
+                background: accentSoft, color: accent, border: 'none',
+                padding: '8px 12px', borderRadius: 7, fontSize: 12, fontWeight: 500,
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}>✓ I reached out</button>
+              <button onClick={onSnoozeToggle} style={{
+                background: 'transparent', color: '#8B7F70', border: '1px solid rgba(60,50,40,0.12)',
+                padding: '7px 12px', borderRadius: 7, fontSize: 12,
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}>Snooze</button>
+              <button style={{
+                background: 'transparent', color: '#8B7F70', border: 'none',
+                padding: '7px 8px', fontSize: 12,
+                cursor: 'pointer', fontFamily: 'inherit', marginLeft: 'auto',
+              }}>View profile →</button>
+
+              {snoozeOpen && (
+                <div style={{
+                  position: 'absolute', top: '100%', left: 0, marginTop: 6,
+                  background: '#FFFFFF', border: '1px solid rgba(60,50,40,0.1)',
+                  borderRadius: 8, padding: 4, zIndex: 10,
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+                  display: 'flex', flexDirection: 'column',
+                }}>
+                  {['This week', 'Next week', 'Next month'].map(label => (
+                    <button key={label} onClick={() => onSnooze(label)} style={{
+                      background: 'transparent', border: 'none', textAlign: 'left',
+                      padding: '8px 14px', fontSize: 12, cursor: 'pointer',
+                      fontFamily: 'inherit', borderRadius: 5,
+                      whiteSpace: 'nowrap',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = '#F5F1EA'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    >{label}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SpotlightCard({ spotlight, accent, accentSoft }) {
+  const { person, months } = spotlight;
+  return (
+    <div style={{
+      padding: '24px 26px',
+      background: `linear-gradient(135deg, ${accentSoft}, rgba(255,255,255,0.4))`,
+      border: `1px solid ${accentSoft}`,
+      borderRadius: 12,
+      display: 'flex', gap: 18, alignItems: 'center',
+    }}>
+      <Avatar initials={person.initials} tone={person.tone} size={48} />
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: accent, marginBottom: 4 }}>
+          Profile feels stale
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 4 }}>
+          What's new with {person.name}?
+        </div>
+        <div style={{ fontSize: 13, color: '#6B6055', lineHeight: 1.5 }}>
+          You last updated her profile {months} months ago — back then she was just back from her Kyoto pottery residency.
+          Worth a quick refresh?
+        </div>
+      </div>
+      <button style={{
+        background: '#1A1612', color: '#F5F1EA', border: 'none',
+        padding: '9px 14px', borderRadius: 7, fontSize: 12, fontWeight: 500,
+        cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
+      }}>Open profile →</button>
+    </div>
+  );
+}
+
+Object.assign(window, { DashboardAfter, TopNav });
+
+// Contact detail "After" — small next-step strip on top, timeline as the main body.
+
+function ContactDetailAfter({ accent = '#5C6B4E', accentSoft = 'rgba(92,107,78,0.10)' }) {
+  const person = MOCK_PEOPLE[2]; // 盧宛翎
+  const [logOpen, setLogOpen] = React.useState(false);
+  const [aboutOpen, setAboutOpen] = React.useState(false);
+
+  const timeline = [
+    {
+      date: 'Jan 1, 2026', daysAgo: 18,
+      body: '下次日檢可能又沒過，如果晚上決定再試最後一次，如果夠了才能畢業。目前一邊找日商行銷工作，邊是有一點點迷惘 — 從大阪回來後，好玩！',
+      topics: ['JLPT', 'Job search', 'Returned from Osaka'],
+      followUp: 'Follow up on job applications',
+    },
+    {
+      date: 'Nov 12, 2025', daysAgo: 76,
+      body: '在大阪實習快結束，正在猶豫要不要試試東京的工作。',
+      topics: ['Osaka internship', 'Tokyo'],
+      followUp: '',
+    },
+    {
+      date: 'Aug 3, 2025', daysAgo: 178,
+      body: '考慮繼續在日本待，但家人希望她回台灣。',
+      topics: ['Family', 'Japan'],
+      followUp: '',
+    },
+  ];
+
+  return (
+    <div style={{
+      width: 1440, height: 900, background: '#F5F1EA',
+      fontFamily: '"Inter", "Noto Sans TC", -apple-system, sans-serif',
+      color: '#2A251F', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+    }}>
+      <TopNav active="contacts" accent={accent} />
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 80px 60px' }}>
+        <div style={{ maxWidth: 880, margin: '0 auto' }}>
+          <a style={{ fontSize: 13, color: '#8B7F70', cursor: 'pointer', textDecoration: 'none' }}>← All contacts</a>
+
+          {/* Header */}
+          <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', margin: '20px 0 8px' }}>
+            <Avatar initials={person.initials} tone={person.tone} size={64} />
+            <div style={{ flex: 1, paddingTop: 4 }}>
+              <h1 style={{ fontSize: 28, fontWeight: 500, margin: 0, letterSpacing: '-0.01em' }}>{person.name}</h1>
+              <div style={{ fontSize: 14, color: '#6B6055', marginTop: 4 }}>{person.role}</div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+                <CategoryPill cat="Friend" />
+                <span style={{ fontSize: 12, color: '#8B7F70' }}>📍 Taipei · 🎂 Dec 20</span>
+              </div>
+            </div>
+            <button style={{
+              background: 'transparent', color: '#6B6055',
+              border: '1px solid rgba(60,50,40,0.15)',
+              padding: '8px 14px', borderRadius: 7, fontSize: 13,
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}>Edit profile</button>
+          </div>
+
+          {/* Next-step strip — single line */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            padding: '12px 16px', marginTop: 16,
+            background: '#FBF8F3',
+            border: `1px solid ${accentSoft}`, borderRadius: 10,
+          }}>
+            <div style={{
+              fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
+              color: accent, padding: '3px 8px', background: accentSoft, borderRadius: 4,
+            }}>Next</div>
+            <div style={{ fontSize: 13, color: '#3A352E', flex: 1 }}>
+              Last talked <strong>18 days ago</strong> — about her job search and JLPT prep.
+              You usually catch up every ~2 months.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button style={{
+                background: '#1A1612', color: '#F5F1EA', border: 'none',
+                padding: '7px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500,
+                cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5,
+                fontFamily: 'inherit',
+              }}><ChannelIcon kind="line" size={12} /> Open LINE</button>
+              <button onClick={() => setLogOpen(true)} style={{
+                background: accentSoft, color: accent, border: 'none',
+                padding: '7px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500,
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}>+ Log update</button>
+            </div>
+          </div>
+
+          {/* Log update inline */}
+          {logOpen && (
+            <div style={{
+              marginTop: 12, padding: '18px 20px',
+              background: '#FFFFFF',
+              border: `1px solid ${accentSoft}`,
+              borderRadius: 10,
+            }}>
+              <textarea
+                placeholder="What's new with 盧宛翎? What did you talk about?"
+                style={{
+                  width: '100%', minHeight: 80, border: 'none', resize: 'vertical',
+                  fontFamily: 'inherit', fontSize: 14, color: '#2A251F', outline: 'none',
+                  background: 'transparent', padding: 0,
+                }}
+                autoFocus
+              />
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                marginTop: 12, paddingTop: 12,
+                borderTop: '1px solid rgba(60,50,40,0.06)',
+              }}>
+                <input placeholder="+ Follow-up todo (optional)" style={{
+                  flex: 1, border: 'none', outline: 'none', fontSize: 13,
+                  color: '#6B6055', background: 'transparent', fontFamily: 'inherit',
+                }}/>
+                <span style={{ fontSize: 12, color: '#8B7F70' }}>Today, Apr 29</span>
+                <button onClick={() => setLogOpen(false)} style={{
+                  background: 'transparent', color: '#8B7F70', border: 'none',
+                  padding: '6px 10px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+                }}>Cancel</button>
+                <button style={{
+                  background: accent, color: '#F5F1EA', border: 'none',
+                  padding: '7px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}>Save</button>
+              </div>
+            </div>
+          )}
+
+          {/* Timeline */}
+          <section style={{ marginTop: 36 }}>
+            <h2 style={{
+              fontSize: 13, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
+              color: accent, margin: '0 0 16px',
+            }}>Timeline</h2>
+
+            <div style={{ position: 'relative', paddingLeft: 24 }}>
+              {/* Vertical line */}
+              <div style={{
+                position: 'absolute', left: 5, top: 8, bottom: 8,
+                width: 1, background: 'rgba(60,50,40,0.10)',
+              }}/>
+              {timeline.map((entry, i) => (
+                <div key={i} style={{ position: 'relative', paddingBottom: 28 }}>
+                  <div style={{
+                    position: 'absolute', left: -24, top: 6,
+                    width: 11, height: 11, borderRadius: '50%',
+                    background: i === 0 ? accent : '#FBF8F3',
+                    border: `2px solid ${i === 0 ? accent : 'rgba(60,50,40,0.18)'}`,
+                  }}/>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: '#2A251F' }}>{entry.date}</span>
+                    <span style={{ fontSize: 12, color: '#8B7F70' }}>· {entry.daysAgo}d ago</span>
+                  </div>
+                  <div style={{ fontSize: 14, lineHeight: 1.65, color: '#3A352E', textWrap: 'pretty' }}>{entry.body}</div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+                    {entry.topics.map(t => <Tag key={t}>{t}</Tag>)}
+                  </div>
+                  {entry.followUp && (
+                    <div style={{
+                      marginTop: 10, fontSize: 12, color: accent,
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '5px 10px', background: accentSoft, borderRadius: 6,
+                    }}>↳ {entry.followUp}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* About — collapsed by default */}
+          <section style={{ marginTop: 24 }}>
+            <button onClick={() => setAboutOpen(!aboutOpen)} style={{
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              fontSize: 13, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
+              color: '#8B7F70', padding: '8px 0', fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>About & contact info <span style={{ fontSize: 10 }}>{aboutOpen ? '▴' : '▾'}</span></button>
+            {aboutOpen && (
+              <div style={{
+                display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 32px',
+                padding: '12px 0', fontSize: 13,
+              }}>
+                <Field label="Birthday" value="Dec 20, 2000" />
+                <Field label="Location" value="Taipei, Taiwan" />
+                <Field label="Email" value="—" muted />
+                <Field label="Phone" value="—" muted />
+                <Field label="LinkedIn" value="—" muted />
+                <Field label="Instagram" value="—" muted />
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, value, muted }) {
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: '#8B7F70', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 13, color: muted ? '#B5AC9E' : '#2A251F' }}>{value}</div>
+    </div>
+  );
+}
+
+Object.assign(window, { ContactDetailAfter });
+
+// Add Contact "After" — 3 fields seed + progressive disclosure preview.
+
+function AddContactAfter({ accent = '#5C6B4E', accentSoft = 'rgba(92,107,78,0.10)' }) {
+  const [name, setName] = React.useState('');
+  const [cat, setCat] = React.useState('Friend');
+  const [how, setHow] = React.useState('');
+  const [stage, setStage] = React.useState('seed'); // 'seed' | 'preview'
+
+  return (
+    <div style={{
+      width: 1440, height: 900, background: '#F5F1EA',
+      fontFamily: '"Inter", "Noto Sans TC", -apple-system, sans-serif',
+      color: '#2A251F', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+    }}>
+      <TopNav active="contacts" accent={accent} />
+
+      {/* dimmed contacts behind */}
+      <div style={{
+        flex: 1, position: 'relative',
+        background: '#F5F1EA',
+      }}>
+        <div style={{
+          position: 'absolute', inset: 0, padding: '40px 80px',
+          opacity: 0.35, pointerEvents: 'none',
+        }}>
+          <div style={{ fontSize: 28, fontWeight: 500, marginBottom: 24 }}>All contacts</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, maxWidth: 1100 }}>
+            {MOCK_PEOPLE.slice(0, 6).map((p, i) => (
+              <div key={i} style={{
+                padding: 16, background: '#FBF8F3', borderRadius: 10,
+                border: '1px solid rgba(60,50,40,0.06)', height: 96,
+              }}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <Avatar initials={p.initials} tone={p.tone} size={36} />
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 500 }}>{p.name}</div>
+                    <div style={{ fontSize: 12, color: '#8B7F70' }}>{p.role}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Modal */}
+        <div style={{
+          position: 'absolute', top: '50%', left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: stage === 'seed' ? 480 : 720,
+          background: '#FFFFFF',
+          borderRadius: 14, padding: stage === 'seed' ? '28px 32px 24px' : '32px 36px 28px',
+          boxShadow: '0 24px 60px rgba(40,30,20,0.18), 0 4px 12px rgba(40,30,20,0.06)',
+          border: '1px solid rgba(60,50,40,0.06)',
+          transition: 'all 0.3s ease',
+        }}>
+          {stage === 'seed' ? (
+            <SeedForm
+              name={name} setName={setName}
+              cat={cat} setCat={setCat}
+              how={how} setHow={setHow}
+              onContinue={() => setStage('preview')}
+              accent={accent} accentSoft={accentSoft}
+            />
+          ) : (
+            <PreviewForm
+              name={name || '盧宛翎'} cat={cat} how={how || 'Met at 2024 Taipei AI meetup, working on brand strategy.'}
+              onBack={() => setStage('seed')}
+              accent={accent} accentSoft={accentSoft}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SeedForm({ name, setName, cat, setCat, how, setHow, onContinue, accent, accentSoft }) {
+  return (
+    <div>
+      <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 4 }}>Add a person</div>
+      <div style={{ fontSize: 13, color: '#8B7F70', marginBottom: 22 }}>Just the basics. You can add more later.</div>
+
+      <Label>Name</Label>
+      <Input value={name} onChange={setName} placeholder="e.g. 盧宛翎 / Patrick Wu" autoFocus />
+
+      <div style={{ height: 16 }}/>
+
+      <Label>How do you know them?</Label>
+      <Input
+        value={how} onChange={setHow}
+        placeholder="Met at 2024 Taipei AI meetup, working on brand strategy…"
+        as="textarea"
+      />
+      <div style={{ fontSize: 11, color: '#A89F90', marginTop: 6 }}>
+        One sentence is enough. This becomes the first entry in their timeline.
+      </div>
+
+      <div style={{ height: 16 }}/>
+
+      <Label>Category</Label>
+      <div style={{ display: 'flex', gap: 6 }}>
+        {['Friend', 'Colleague', 'Family', 'Business'].map(c => (
+          <button key={c} onClick={() => setCat(c)} style={{
+            padding: '7px 14px', borderRadius: 7,
+            border: `1px solid ${cat === c ? accent : 'rgba(60,50,40,0.12)'}`,
+            background: cat === c ? accentSoft : 'transparent',
+            color: cat === c ? accent : '#6B6055',
+            fontSize: 13, fontWeight: cat === c ? 500 : 400,
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}>{c}</button>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 28, paddingTop: 18, borderTop: '1px solid rgba(60,50,40,0.06)' }}>
+        <button style={{
+          background: 'transparent', border: 'none', color: '#8B7F70',
+          fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', padding: 0,
+        }}>Cancel</button>
+        <button onClick={onContinue} style={{
+          background: accent, color: '#F5F1EA', border: 'none',
+          padding: '10px 20px', borderRadius: 7, fontSize: 13, fontWeight: 500,
+          cursor: 'pointer', fontFamily: 'inherit',
+        }}>Add contact →</button>
+      </div>
+    </div>
+  );
+}
+
+function PreviewForm({ name, cat, how, onBack, accent, accentSoft }) {
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+        <span style={{
+          fontSize: 11, padding: '3px 8px', background: accentSoft, color: accent,
+          borderRadius: 4, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase',
+        }}>Saved</span>
+        <span style={{ fontSize: 13, color: '#8B7F70' }}>Optional — add more anytime.</span>
+      </div>
+      <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 22 }}>What else do you know about {name}?</div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        {[
+          { label: 'Birthday', icon: '🎂' },
+          { label: 'Phone', icon: '📞' },
+          { label: 'LINE', icon: '💬' },
+          { label: 'Instagram', icon: '📷' },
+          { label: 'Email', icon: '✉️' },
+          { label: 'LinkedIn', icon: '🔗' },
+          { label: 'Location', icon: '📍' },
+          { label: 'Tag', icon: '#' },
+        ].map(f => (
+          <button key={f.label} style={{
+            padding: '14px 16px', textAlign: 'left',
+            background: '#FBF8F3',
+            border: '1px dashed rgba(60,50,40,0.18)',
+            borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit',
+            display: 'flex', alignItems: 'center', gap: 10,
+            transition: 'all 0.15s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderStyle = 'solid'; e.currentTarget.style.borderColor = accent; }}
+          onMouseLeave={e => { e.currentTarget.style.borderStyle = 'dashed'; e.currentTarget.style.borderColor = 'rgba(60,50,40,0.18)'; }}
+          >
+            <span style={{ fontSize: 14 }}>{f.icon}</span>
+            <span style={{ fontSize: 13, color: '#6B6055' }}>+ {f.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <div style={{
+        marginTop: 22, padding: '14px 16px',
+        background: 'rgba(92,107,78,0.06)', borderRadius: 8,
+        fontSize: 13, color: '#3A352E', lineHeight: 1.55,
+      }}>
+        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: accent, marginBottom: 4 }}>
+          Saved as first timeline entry
+        </div>
+        <div style={{ fontStyle: 'italic', color: '#6B6055' }}>"{how}"</div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, paddingTop: 18, borderTop: '1px solid rgba(60,50,40,0.06)' }}>
+        <button onClick={onBack} style={{
+          background: 'transparent', border: 'none', color: '#8B7F70',
+          fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', padding: 0,
+        }}>← Back</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button style={{
+            background: 'transparent', color: '#6B6055',
+            border: '1px solid rgba(60,50,40,0.15)',
+            padding: '9px 16px', borderRadius: 7, fontSize: 13,
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}>Skip for now</button>
+          <button style={{
+            background: accent, color: '#F5F1EA', border: 'none',
+            padding: '9px 18px', borderRadius: 7, fontSize: 13, fontWeight: 500,
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}>View profile →</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Label({ children }) {
+  return <div style={{ fontSize: 12, fontWeight: 500, color: '#3A352E', marginBottom: 6 }}>{children}</div>;
+}
+function Input({ value, onChange, placeholder, as, autoFocus }) {
+  const Comp = as === 'textarea' ? 'textarea' : 'input';
+  return (
+    <Comp
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      placeholder={placeholder}
+      autoFocus={autoFocus}
+      style={{
+        width: '100%', boxSizing: 'border-box',
+        padding: '10px 12px', borderRadius: 8,
+        border: '1px solid rgba(60,50,40,0.12)',
+        background: '#FBF8F3',
+        fontFamily: 'inherit', fontSize: 14, color: '#2A251F',
+        outline: 'none', resize: as === 'textarea' ? 'vertical' : 'none',
+        minHeight: as === 'textarea' ? 60 : undefined,
+      }}
+    />
+  );
+}
+
+Object.assign(window, { AddContactAfter });
+
+</script>
+
+<script type="text/babel" data-presets="env,react">
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "primaryColor": "moss",
+  "fontHead": "Inter"
+}/*EDITMODE-END*/;
+
+const PRIMARY_COLORS = {
+  moss:  { accent: '#5C6B4E', accentSoft: 'rgba(92,107,78,0.10)', label: 'Moss green' },
+  ink:   { accent: '#2E3A5C', accentSoft: 'rgba(46,58,92,0.10)',  label: 'Ink blue' },
+  umber: { accent: '#5A3825', accentSoft: 'rgba(90,56,37,0.10)',  label: 'Deep umber' },
+  warm:  { accent: '#C96442', accentSoft: 'rgba(201,100,66,0.10)', label: 'Original warm' },
+};
+
+function App() {
+  const { useTweaks, TweaksPanel, TweakSection, TweakRadio } = window;
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const palette = PRIMARY_COLORS[t.primaryColor] || PRIMARY_COLORS.moss;
+  const accent = palette.accent;
+  const accentSoft = palette.accentSoft;
+
+  return (
+    <div style={{ fontFamily: t.fontHead === 'Fraunces' ? '"Fraunces", "Noto Sans TC", serif' : '"Inter", "Noto Sans TC", sans-serif' }}>
+      <DesignCanvas>
+        <DCSection
+          id="rationale"
+          title="Personal CRM — Redesign (After)"
+          subtitle="Three after-screens for Patrick. JTBD: 不要讓重要的人從生活中淡出 (A) + 記得跟誰之間發生過什麼 (B)."
+        >
+          <DCArtboard id="rationale-card" label="Design rationale" width={920} height={540}>
+            <RationaleCard accent={accent} accentSoft={accentSoft} />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection
+          id="three"
+          title="Three After Screens"
+          subtitle="Use the Tweaks panel to switch primary color and headline font."
+        >
+          <DCArtboard id="dashboard" label="① Dashboard" width={1440} height={900}>
+            <DashboardAfter userName="Patrick" accent={accent} accentSoft={accentSoft} />
+          </DCArtboard>
+          <DCArtboard id="contact-detail" label="② Contact detail (盧宛翎)" width={1440} height={900}>
+            <ContactDetailAfter accent={accent} accentSoft={accentSoft} />
+          </DCArtboard>
+          <DCArtboard id="add-contact" label="③ Add contact (3-field seed)" width={1440} height={900}>
+            <AddContactAfter accent={accent} accentSoft={accentSoft} />
+          </DCArtboard>
+        </DCSection>
+      </DesignCanvas>
+
+      <TweaksPanel>
+        <TweakSection label="Primary color" />
+        <TweakRadio
+          label="Accent"
+          value={t.primaryColor}
+          options={['moss', 'ink', 'umber', 'warm']}
+          onChange={(v) => setTweak('primaryColor', v)}
+        />
+        <div style={{ fontSize: 11, color: 'rgba(41,38,27,.55)', padding: '0 2px' }}>
+          {palette.label} — {palette.accent}
+        </div>
+        <TweakSection label="Typography" />
+        <TweakRadio
+          label="Headlines"
+          value={t.fontHead}
+          options={['Inter', 'Fraunces']}
+          onChange={(v) => setTweak('fontHead', v)}
+        />
+      </TweaksPanel>
+    </div>
+  );
+}
+
+function RationaleCard({ accent, accentSoft }) {
+  const principles = [
+    { kw: 'A 為主、B 為輔', txt: 'Dashboard = 行動清單；Contact detail = 記憶檔案。' },
+    { kw: '沒有評分', txt: '砍掉 ★ strength。Cadence 是唯一的 relationship metric。' },
+    { kw: 'AI 不替你說話', txt: '只給事實 topic（「他上次提到 X」），不寫完整訊息。' },
+    { kw: 'Inbox 不能爆', txt: 'Today 上限 3，其他收摺進「+12 more」。' },
+    { kw: '進入門檻要低', txt: 'Add contact 3 欄起手，其餘 progressive disclosure。' },
+    { kw: 'Cadence 從第一次 log 才算', txt: '消除「Infinityd overdue」的 guilt-bomb。' },
+  ];
+  return (
+    <div style={{
+      width: '100%', height: '100%',
+      padding: '40px 48px', background: '#FBF8F3', overflow: 'auto',
+      fontFamily: 'inherit', color: '#2A251F',
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: accent, marginBottom: 8 }}>
+        Design rationale
+      </div>
+      <h1 style={{ fontSize: 30, fontWeight: 500, margin: 0, letterSpacing: '-0.02em', maxWidth: 720, lineHeight: 1.2 }}>
+        From <span style={{ textDecoration: 'line-through', color: '#A89F90' }}>guilt-driven dashboard</span> to a calmer, action-oriented CRM that respects your relationships.
+      </h1>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 32px', marginTop: 28 }}>
+        {principles.map((p, i) => (
+          <div key={i} style={{ display: 'flex', gap: 12 }}>
+            <div style={{
+              width: 22, height: 22, borderRadius: 6, background: accentSoft,
+              color: accent, fontWeight: 600, fontSize: 12,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>{i + 1}</div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{p.kw}</div>
+              <div style={{ fontSize: 13, color: '#6B6055', marginTop: 2, lineHeight: 1.5 }}>{p.txt}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{
+        marginTop: 28, padding: '14px 18px', background: accentSoft, borderRadius: 8,
+        fontSize: 13, color: '#3A352E', lineHeight: 1.55,
+      }}>
+        <strong>主色說明：</strong>建議從原本的暖橘改為 <strong>moss green</strong> — 「人脈像植物，需要 care 才會長」的隱喻會在打開 app 的瞬間無聲地傳達。
+        Tweaks 面板可切換 ink blue / deep umber / 原 warm orange 比較。
+      </div>
+    </div>
+  );
+}
+
+setTimeout(() => {
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+}, 100);
+</script>
+</body>
+</html>
