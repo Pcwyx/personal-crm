@@ -1,0 +1,1321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Personal CRM Pro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --cream:#FAF7F2;--paper:#F0EBE3;--card:#EDE8DF;--border:#D8D0C4;
+  --ink:#2A2420;--ink-mid:#6B5040;--ink-light:#8B7355;--ink-faint:#C4B89A;
+  --acc:#D97757;--acc-light:#F2C4AE;--acc-pale:#FBF0EB;
+  --green:#5A8A6A;--amber:#C49B3A;--red:#C44F3A;
+  --sh-s:0 1px 4px rgba(42,36,32,.08),0 1px 2px rgba(42,36,32,.04);
+  --sh-m:0 4px 16px rgba(42,36,32,.10),0 2px 4px rgba(42,36,32,.05);
+  --sh-l:0 16px 44px rgba(42,36,32,.14),0 4px 10px rgba(42,36,32,.06);
+}
+html,body,#root{height:100%;font-family:'DM Sans',sans-serif;color:var(--ink);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;background:var(--cream);}
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+button{font-family:'DM Sans',sans-serif;cursor:pointer;}
+input,textarea{font-family:'DM Sans',sans-serif;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideRight{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+@keyframes slideUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- ── SUPABASE ────────────────────────────────────────────── -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+window.__sb = supabase.createClient(
+  'https://mslsbkrgmkcpmizjcjcj.supabase.co',
+  'sb_publishable_RtJBt3zHoNnIzKtkdQK_Zw_2A4giSCW'
+);
+</script>
+
+<!-- ── TWEAKS ENGINE (inline so it's synchronous) ────────── -->
+<script type="text/babel">
+function useTweaks(defaults) {
+  const [v, setV] = React.useState(defaults);
+  const set = React.useCallback((k, val) => {
+    const edits = typeof k === 'string' ? {[k]: val} : k;
+    setV(p => ({...p, ...edits}));
+    try { window.parent.postMessage({type:'__edit_mode_set_keys', edits}, '*'); } catch(e){}
+  }, []);
+  return [v, set];
+}
+
+function TweaksPanel({children}) {
+  const [open, setOpen] = React.useState(false);
+  React.useEffect(() => {
+    const fn = e => {
+      if(e.data?.type==='__activate_edit_mode') setOpen(true);
+      if(e.data?.type==='__deactivate_edit_mode') setOpen(false);
+    };
+    window.addEventListener('message', fn);
+    window.parent.postMessage({type:'__edit_mode_available'}, '*');
+    return () => window.removeEventListener('message', fn);
+  }, []);
+  if(!open) return null;
+  return (
+    <div style={{position:'fixed',right:16,bottom:16,zIndex:9999,width:264,background:'rgba(250,249,247,.93)',backdropFilter:'blur(22px)',borderRadius:13,boxShadow:'0 8px 36px rgba(0,0,0,.22)',border:'.5px solid rgba(255,255,255,.65)',overflow:'hidden',animation:'fadeUp .18s ease'}}>
+      <div style={{padding:'10px 14px',borderBottom:'1px solid rgba(0,0,0,.07)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <b style={{fontSize:12,letterSpacing:'.01em'}}>Tweaks</b>
+        <button onClick={()=>{setOpen(false);window.parent.postMessage({type:'__edit_mode_dismissed'},'*');}} style={{background:'none',border:'none',fontSize:18,cursor:'pointer',color:'#999',lineHeight:1}}>×</button>
+      </div>
+      <div style={{padding:'6px 0',maxHeight:'65vh',overflow:'auto'}}>{children}</div>
+    </div>
+  );
+}
+function TweakSection({label}){
+  return <div style={{padding:'10px 14px 4px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.09em',color:'#aaa'}}>{label}</div>;
+}
+function TweakRadio({label,value,options,onChange}){
+  return(
+    <div style={{padding:'3px 14px 9px'}}>
+      {label&&<div style={{fontSize:11,color:'#777',marginBottom:5}}>{label}</div>}
+      <div style={{display:'flex',background:'rgba(0,0,0,.07)',borderRadius:8,padding:2,gap:1}}>
+        {options.map(o=>(
+          <button key={o} onClick={()=>onChange(o)} style={{flex:1,padding:'5px 6px',borderRadius:6,border:'none',background:value===o?'white':'transparent',color:value===o?'#1a1a1a':'#888',fontSize:11.5,fontWeight:value===o?600:400,cursor:'pointer',transition:'all .12s',boxShadow:value===o?'0 1px 4px rgba(0,0,0,.11)':'none'}}>{o}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+function TweakToggle({label,value,onChange}){
+  const acc=value?'var(--acc)':'rgba(0,0,0,.15)';
+  return(
+    <div style={{padding:'4px 14px 9px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+      <span style={{fontSize:12,color:'#555'}}>{label}</span>
+      <div onClick={()=>onChange(!value)} style={{width:36,height:21,borderRadius:11,background:acc,cursor:'pointer',position:'relative',transition:'background .2s',flexShrink:0}}>
+        <div style={{position:'absolute',top:2.5,left:value?15:2.5,width:16,height:16,borderRadius:'50%',background:'white',transition:'left .2s',boxShadow:'0 1px 4px rgba(0,0,0,.22)'}}/>
+      </div>
+    </div>
+  );
+}
+function TweakColor({label,value,options,onChange}){
+  return(
+    <div style={{padding:'3px 14px 9px'}}>
+      {label&&<div style={{fontSize:11,color:'#777',marginBottom:6}}>{label}</div>}
+      <div style={{display:'flex',gap:7}}>
+        {options.map(o=>(
+          <div key={o} onClick={()=>onChange(o)} title={o}
+            style={{width:30,height:30,borderRadius:7,background:o,cursor:'pointer',outline:value===o?`2.5px solid #333`:'2.5px solid transparent',outlineOffset:2,transition:'outline .12s',boxShadow:'0 2px 6px rgba(0,0,0,.15)'}}/>
+        ))}
+      </div>
+    </div>
+  );
+}
+Object.assign(window, {useTweaks, TweaksPanel, TweakSection, TweakRadio, TweakToggle, TweakColor});
+</script>
+
+<!-- ── MAIN APP ───────────────────────────────────────────── -->
+<script type="text/babel">
+const {useState, useEffect, useMemo, useCallback} = React;
+
+/* ── DEFAULTS ─── */
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accentColor": "#D97757",
+  "viewMode": "grid",
+  "sidebarCollapsed": false,
+  "showStrengthRings": true
+}/*EDITMODE-END*/;
+
+const ACCENT_OPTIONS = ['#D97757','#3B6FD4','#9B4F8E'];
+const ACCENT_THEMES = {
+  '#D97757': {acc:'#D97757',accLight:'#F2C4AE',accPale:'#FBF0EB'},
+  '#3B6FD4': {acc:'#3B6FD4',accLight:'#A8C0F0',accPale:'#EFF4FD'},
+  '#9B4F8E': {acc:'#9B4F8E',accLight:'#D9A8D4',accPale:'#F7EEF6'},
+};
+
+/* ── SAMPLE DATA ─── */
+const TODAY = new Date('2026-05-09');
+const ago = n => { const d=new Date(TODAY); d.setDate(d.getDate()-n); return d.toISOString().split('T')[0]; };
+const fwd = n => { const d=new Date(TODAY); d.setDate(d.getDate()+n); return d.toISOString().split('T')[0]; };
+
+const CONTACTS = [
+  {id:1,name:"Sarah Chen",role:"Product Director",company:"Figma",email:"sarah.chen@figma.com",phone:"+1 (415) 555-0192",tags:["design","bay-area","mentor"],lastContact:ago(21),nextFollowUp:fwd(1),strength:.82,birthday:"05-14",relationship:"Mentor",cadence:30,location:"San Francisco, CA",notes:"Met at Config 2025. Keen interest in AI-driven design. Intro'd me to Marcus at Stripe. Potential advisor.",social:{linkedin:"sarahchen",twitter:"schen_design"},interactions:[{date:ago(21),type:"video",note:"Caught up over Zoom about new PM frameworks and AI tools in design"},{date:ago(68),type:"email",note:"Forwarded the piece on spatial computing — she loved it"},{date:ago(115),type:"event",note:"Config conference, dinner after keynote with the Figma crew"}]},
+  {id:2,name:"Marcus Webb",role:"Eng. Lead",company:"Stripe",email:"marcus@stripe.com",phone:"+1 (628) 555-0441",tags:["engineering","fintech","sf"],lastContact:ago(14),nextFollowUp:fwd(-2),strength:.64,birthday:"09-22",relationship:"Colleague",cadence:60,location:"San Francisco, CA",notes:"Intro via Sarah. Building Stripe's new payments infra. Keen to collaborate on API design patterns.",social:{linkedin:"marcuswebb",twitter:null},interactions:[{date:ago(14),type:"coffee",note:"Quick espresso in SOMA. Talked distributed systems and the Rust rewrite"},{date:ago(42),type:"call",note:"30-min call about the API patterns paper I sent over"}]},
+  {id:3,name:"Elena Vasquez",role:"Partner",company:"Sequoia Capital",email:"elena.v@sequoiacap.com",phone:"+1 (650) 555-0887",tags:["investor","vc","mentor"],lastContact:ago(3),nextFollowUp:fwd(18),strength:.91,birthday:"03-08",relationship:"Investor",cadence:7,location:"Menlo Park, CA",notes:"Lead candidate for Series A. Very interested in our distribution angle. Warm intro via David.",social:{linkedin:"elenavasquez",twitter:"elena_vc"},interactions:[{date:ago(3),type:"meeting",note:"Partner presentation at Sequoia HQ — very positive energy in the room"},{date:ago(11),type:"email",note:"Sent updated financial model and deck"},{date:ago(24),type:"call",note:"Intro call, 45 min — she asked sharp questions on unit economics"}]},
+  {id:4,name:"Tom Nakamura",role:"Illustrator",company:"Freelance",email:"tom@nakamura.studio",phone:"+1 (212) 555-0334",tags:["creative","nyc","collaborator"],lastContact:ago(112),nextFollowUp:fwd(-30),strength:.18,birthday:"11-30",relationship:"Friend",cadence:90,location:"New York, NY",notes:"Collaborated on brand identity in 2025. Incredibly talented. Loop in for the next visual project.",social:{linkedin:null,twitter:"tomnaka_draws"},interactions:[{date:ago(112),type:"email",note:"Final invoice wrap-up for the brand identity project"},{date:ago(148),type:"meeting",note:"Review session for deliverables in NYC"}]},
+  {id:5,name:"Priya Sharma",role:"UX Research Lead",company:"Google",email:"priya.sharma@google.com",phone:"+1 (650) 555-0229",tags:["research","design","bay-area"],lastContact:ago(8),nextFollowUp:fwd(6),strength:.73,birthday:"05-20",relationship:"Colleague",cadence:45,location:"Mountain View, CA",notes:"Met at UX Research Summit. Brilliant on mixed-methods. Could co-author a piece on AI-assisted synthesis.",social:{linkedin:"priyasharma_ux",twitter:"priya_research"},interactions:[{date:ago(8),type:"coffee",note:"Peet's in Mountain View. She shared early findings from the GenZ study"},{date:ago(31),type:"event",note:"UX Research Summit, San Jose"}]},
+  {id:6,name:"Alex Kim",role:"Research Scientist",company:"OpenAI",email:"akim@openai.com",phone:null,tags:["ai","research","sf"],lastContact:ago(124),nextFollowUp:fwd(-45),strength:.11,birthday:"07-04",relationship:"Friend",cadence:60,location:"San Francisco, CA",notes:"Ex-colleague from the ML team. Now at OpenAI on RLHF. Reconnect before this goes cold.",social:{linkedin:"alexkim_ml",twitter:null},interactions:[{date:ago(124),type:"message",note:"Congrats DM on the OpenAI announcement"},{date:ago(310),type:"coffee",note:"Last proper catch-up before they joined"}]},
+  {id:7,name:"Julia Hoffmann",role:"Co-founder & CEO",company:"Lumio",email:"julia@lumio.io",phone:"+49 30 555-0991",tags:["startup","berlin","founder"],lastContact:ago(4),nextFollowUp:fwd(10),strength:.68,birthday:"12-01",relationship:"Partner",cadence:14,location:"Berlin, Germany",notes:"Met at SeedSummit Berlin. Building vertical AI for logistics. Good for the European angle.",social:{linkedin:"juliahoffmann",twitter:"julia_lumio"},interactions:[{date:ago(4),type:"call",note:"Intro call after SeedSummit — 1hr, super energetic, building fast"},{date:ago(7),type:"event",note:"SeedSummit Berlin, networking dinner"}]},
+  {id:8,name:"David Osei",role:"Managing Partner",company:"Osei Ventures",email:"david@oseiv.com",phone:"+1 (415) 555-0773",tags:["investor","mentor","advisor"],lastContact:ago(6),nextFollowUp:fwd(8),strength:.95,birthday:"05-17",relationship:"Mentor",cadence:7,location:"San Francisco, CA",notes:"Earliest investor and most trusted advisor. Weekly syncs. Intro'd me to Elena at Sequoia.",social:{linkedin:"davidosei",twitter:"david_osei_v"},interactions:[{date:ago(6),type:"call",note:"Weekly sync. Series A timeline and term sheet nuances"},{date:ago(13),type:"call",note:"Weekly sync. Sequoia intro strategy"},{date:ago(20),type:"meeting",note:"Lunch at Bix, SF. Reviewed the board deck draft together"}]},
+];
+
+/* ── BIRTHDAY UTILS ─── */
+const birthdayDaysAway = bd => {
+  if(!bd) return null;
+  const [m,d] = bd.split('-').map(Number);
+  let bday = new Date(TODAY.getFullYear(), m-1, d);
+  if(bday < TODAY) bday = new Date(TODAY.getFullYear()+1, m-1, d);
+  return Math.floor((bday-TODAY)/864e5);
+};
+const formatBirthday = bd => {
+  if(!bd) return '';
+  const [m,d] = bd.split('-').map(Number);
+  return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m-1]+' '+d;
+};
+
+/* ── RELATIONSHIP & CADENCE UTILS ─── */
+const REL_STYLES = {
+  Friend:      {bg:'#FEF2EE',color:'#C87553'},
+  Colleague:   {bg:'#EFF4FD',color:'#3B6FD4'},
+  Mentor:      {bg:'#F2EDFD',color:'#7C5AC2'},
+  Investor:    {bg:'#EAF3EC',color:'#2A8C5E'},
+  Partner:     {bg:'#FDF6E3',color:'#B08A20'},
+  Friend:      {bg:'#FEF2EE',color:'#C87553'},
+  Collaborator:{bg:'var(--card)',color:'var(--ink-mid)'},
+};
+const getRelStyle = r => REL_STYLES[r] || {bg:'var(--card)',color:'var(--ink-light)'};
+const cadenceLabel = d => d<=7?'weekly':d<=14?'bi-weekly':d<=30?'monthly':d<=60?'bi-monthly':'quarterly';
+const cadenceDaysLeft = (last, days) => {
+  if(!last||!days) return null;
+  return days - Math.floor((TODAY-new Date(last))/864e5);
+};
+const RelChip = ({rel, size='sm'}) => {
+  if(!rel) return null;
+  const s = getRelStyle(rel);
+  return <span style={{display:'inline-block',padding:size==='lg'?'3px 11px':'2px 8px',borderRadius:20,fontSize:size==='lg'?12:11,fontWeight:600,background:s.bg,color:s.color,border:`1px solid ${s.color}33`,whiteSpace:'nowrap'}}>{rel}</span>;
+};
+
+/* ── DB MAPPERS ─── */
+const dbToContact = row => ({
+  id: row.id,
+  name: row.name || '',
+  role: row.role || '',
+  company: row.company || '',
+  email: row.email || null,
+  phone: row.phone || null,
+  tags: row.tags || [],
+  lastContact: row.last_contact || null,
+  nextFollowUp: row.next_follow_up || null,
+  strength: row.strength ?? 0.5,
+  birthday: row.birthday || null,
+  location: row.location || null,
+  relationship: row.relationship || null,
+  cadence: row.cadence || null,
+  notes: row.notes || '',
+  social: row.social || {},
+  interactions: (row.interactions || [])
+    .sort((a,b)=>new Date(b.date)-new Date(a.date))
+    .map(i=>({date:i.date,type:i.type,note:i.note||''})),
+});
+const contactToDb = c => ({
+  name: c.name, role: c.role||null, company: c.company||null,
+  email: c.email||null, phone: c.phone||null, tags: c.tags||[],
+  last_contact: c.lastContact||null, next_follow_up: c.nextFollowUp||null,
+  strength: c.strength??0.5, notes: c.notes||null, social: c.social||{},
+  birthday: c.birthday||null, location: c.location||null,
+  relationship: c.relationship||null, cadence: c.cadence||null,
+});
+
+/* ── UTILS ─── */
+const sColor = s => s>=.8?'#5A8A6A':s>=.5?'#C49B3A':s>=.25?'#D97757':'#C44F3A';
+const sLabel = s => s>=.8?'Thriving':s>=.5?'Active':s>=.25?'Fading':'Dormant';
+const relTime = d => {
+  const days=Math.floor((TODAY-new Date(d))/(864e5));
+  if(days===0)return'Today';if(days===1)return'Yesterday';
+  if(days<7)return`${days}d ago`;if(days<30)return`${Math.floor(days/7)}w ago`;
+  if(days<365)return`${Math.floor(days/30)}mo ago`;return`${Math.floor(days/365)}y ago`;
+};
+const relFuture = d => {
+  const days=Math.floor((new Date(d)-TODAY)/(864e5));
+  if(days<-1)return`${Math.abs(days)}d overdue`;if(days===-1)return'Due yesterday';
+  if(days===0)return'Due today';if(days===1)return'Due tomorrow';
+  if(days<7)return`Due in ${days}d`;return`Due ${Math.floor(days/7)}w`;
+};
+const isDue = c => c.nextFollowUp && Math.floor((new Date(c.nextFollowUp)-TODAY)/(864e5))<=0;
+const iIconMap = {coffee:'☕',email:'✉',call:'📞',video:'🎥',meeting:'🤝',event:'🎉',message:'💬',note:'📝'};
+const iIcon = t => iIconMap[t]||'📝';
+const initials = n => n.split(' ').map(x=>x[0]).join('');
+const AVI_COLORS = ['#C87553','#5A8A6A','#8B6BB5','#3B6FD4','#C49B3A','#E07A5F','#6B9E9E','#D97757'];
+
+/* ── AI SUGGESTION ─── */
+const AISuggestion = ({contact, acc, onLog}) => {
+  const [state, setState] = useState('idle');
+  const [suggestion, setSuggestion] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const generate = async () => {
+    setState('loading');
+    const last = contact.interactions[0];
+    try {
+      const resp = await window.claude.complete(
+        `You help maintain personal relationships. Suggest a brief follow-up for this contact.\n\nName: ${contact.name} (${contact.role}${contact.company?` at ${contact.company}`:''})
+Last interaction (${last?relTime(last.date):'unknown'}): ${last?.note||'No recent interaction'}\nNotes: ${contact.notes||'None'}\n\nReply with ONLY valid JSON (no markdown): {"action":"one-line suggested action","message":"2-3 sentence warm casual message to send"}`
+      );
+      const json = JSON.parse(resp.replace(/```json|```/g,'').trim());
+      setSuggestion(json); setState('done');
+    } catch(e) {
+      setSuggestion({action:`Check in with ${contact.name.split(' ')[0]}`,message:`Hey ${contact.name.split(' ')[0]}! It's been a while — hope everything's going well. Would love to catch up soon!`});
+      setState('done');
+    }
+  };
+  const copy = () => { navigator.clipboard.writeText(suggestion.message); setCopied(true); setTimeout(()=>setCopied(false),2000); };
+  const logIt = () => onLog(contact.id,{type:'message',note:suggestion.action});
+  if(state==='idle') return(
+    <div onClick={generate} style={{display:'flex',alignItems:'center',gap:8,padding:'10px 13px',borderRadius:9,border:'1.5px dashed var(--border)',cursor:'pointer',marginTop:12,transition:'all .15s'}}
+      onMouseEnter={e=>{e.currentTarget.style.borderColor=acc;e.currentTarget.style.background=`${acc}08`;}} onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--border)';e.currentTarget.style.background='transparent';}}>
+      <span style={{fontSize:13,color:acc,fontWeight:700}}>✶</span>
+      <span style={{fontSize:12.5,color:'var(--ink-light)'}}>Generate AI follow-up suggestion</span>
+    </div>
+  );
+  if(state==='loading') return(
+    <div style={{padding:'12px 14px',borderRadius:9,background:`${acc}0A`,border:`1.5px solid ${acc}33`,marginTop:12,display:'flex',alignItems:'center',gap:8}}>
+      <span style={{fontSize:12,color:acc,fontWeight:700}}>✶</span>
+      <span style={{fontSize:12,color:'var(--ink-light)'}}>Thinking…</span>
+    </div>
+  );
+  return(
+    <div style={{padding:'13px 15px',borderRadius:9,background:`${acc}0A`,border:`1.5px solid ${acc}33`,marginTop:12}}>
+      <div style={{fontSize:10,fontWeight:700,letterSpacing:'.09em',textTransform:'uppercase',color:acc,marginBottom:7}}>✶ AI Suggestion</div>
+      <div style={{fontSize:13,fontWeight:600,color:'var(--ink)',marginBottom:8}}>→ {suggestion.action}</div>
+      <div style={{fontSize:12.5,color:'var(--ink-mid)',lineHeight:1.65,fontStyle:'italic',marginBottom:10}}>“{suggestion.message}”</div>
+      <div style={{display:'flex',gap:7}}>
+        <button onClick={copy} style={{flex:1,padding:'6px 0',borderRadius:7,border:`1.5px solid ${acc}44`,background:'white',color:acc,fontSize:12,fontWeight:600,cursor:'pointer'}}>{copied?'✓ Copied':'Copy message'}</button>
+        <button onClick={logIt} style={{flex:1,padding:'6px 0',borderRadius:7,border:'none',background:acc,color:'white',fontSize:12,fontWeight:600,cursor:'pointer'}}>✓ I reached out</button>
+      </div>
+    </div>
+  );
+};
+
+/* ── SMALL ATOMS ─── */
+const Ring = ({strength,size=48}) => {
+  const r=(size/2)-3.5, c=2*Math.PI*r, dash=c*strength;
+  return(
+    <svg width={size} height={size} style={{position:'absolute',top:0,left:0,transform:'rotate(-90deg)',pointerEvents:'none'}}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--border)" strokeWidth="2.5"/>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={sColor(strength)} strokeWidth="2.5"
+        strokeDasharray={`${dash} ${c-dash}`} strokeLinecap="round"
+        style={{transition:'stroke-dasharray .7s ease'}}/>
+    </svg>
+  );
+};
+
+const Avi = ({contact, size=44, ring=true}) => {
+  const bg = AVI_COLORS[contact.name.split('').reduce((a,c)=>a+c.charCodeAt(0),0) % AVI_COLORS.length];
+  const inner = ring ? size-8 : size;
+  const inset = ring ? 4 : 0;
+  return(
+    <div style={{position:'relative',width:size,height:size,flexShrink:0}}>
+      {ring && <Ring strength={contact.strength} size={size}/>}
+      <div style={{position:'absolute',top:inset,left:inset,width:inner,height:inner,borderRadius:'50%',background:bg,display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontSize:size*(ring?.28:.34),fontWeight:600,fontFamily:"'Lora',serif",userSelect:'none',letterSpacing:'-.02em'}}>
+        {initials(contact.name)}
+      </div>
+    </div>
+  );
+};
+
+const Chip = ({label, accent, acc}) => (
+  <span style={{display:'inline-block',padding:'2px 8px',borderRadius:20,fontSize:11,fontWeight:500,background:accent?`${acc}18`:'var(--paper)',color:accent?acc:'var(--ink-light)',border:`1px solid ${accent?`${acc}44`:'var(--border)'}`,whiteSpace:'nowrap'}}>
+    {label}
+  </span>
+);
+
+const BirthdayBadge = ({contact}) => {
+  const days = birthdayDaysAway(contact.birthday);
+  if(days===null||days>14) return null;
+  return(
+    <span style={{display:'inline-flex',alignItems:'center',gap:3,padding:'2px 8px',borderRadius:20,fontSize:11,fontWeight:600,background:'#FDF0FB',color:'#9B3F8A',border:'1px solid #E8C4E0',whiteSpace:'nowrap'}}>
+      🎂 {days===0?'Today!':days===1?'Tomorrow':`in ${days}d`}
+    </span>
+  );
+};
+
+const DueBadge = ({contact}) => {
+  if(!contact.nextFollowUp) return null;
+  const days = Math.floor((new Date(contact.nextFollowUp)-TODAY)/(864e5));
+  if(days>3) return null;
+  return(
+    <span style={{display:'inline-flex',alignItems:'center',gap:3,padding:'2px 8px',borderRadius:20,fontSize:11,fontWeight:600,background:days<0?'#FDECEA':days===0?'#FBF0EB':'#FDF6E3',color:days<0?'#C44F3A':days===0?'#D97757':'#C49B3A',border:`1px solid ${days<0?'#FFCDD2':days===0?'#F2C4AE':'#F0DFA0'}`,whiteSpace:'nowrap'}}>
+      {days<0?'⚡':days===0?'⏰':'🔔'} {relFuture(contact.nextFollowUp)}
+    </span>
+  );
+};
+
+const SectionHead = ({label,mt}) => (
+  <div style={{fontSize:10.5,fontWeight:700,letterSpacing:'.09em',textTransform:'uppercase',color:'var(--ink-faint)',marginTop:mt?20:0,marginBottom:7}}>
+    {label}
+  </div>
+);
+
+/* ── CONTACT CARD (grid) ─── */
+const ContactCard = ({contact, selected, onClick, acc}) => {
+  const [hov, setHov] = useState(false);
+  return(
+    <div onClick={onClick} onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+      style={{background:selected||hov?'white':'var(--card)',border:`1.5px solid ${selected?acc:hov?'var(--border)':'transparent'}`,borderRadius:12,padding:'15px',cursor:'pointer',transition:'all .18s ease',boxShadow:selected?`0 0 0 3px ${acc}22,var(--sh-m)`:hov?'var(--sh-s)':'none'}}>
+      <div style={{display:'flex',alignItems:'flex-start',gap:11,marginBottom:11}}>
+        <Avi contact={contact} size={44}/>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontFamily:"'Lora',serif",fontWeight:600,fontSize:14.5,marginBottom:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{contact.name}</div>
+          <div style={{fontSize:11.5,color:'var(--ink-mid)',fontWeight:500}}>{contact.role}</div>
+          <div style={{fontSize:11.5,color:'var(--ink-light)'}}>{contact.company}</div>
+        </div>
+      </div>
+      <div style={{display:'flex',flexWrap:'wrap',gap:4,marginBottom:10,alignItems:'center'}}>
+        {contact.relationship && <RelChip rel={contact.relationship}/>}
+        {contact.tags.slice(0,2).map(t=><Chip key={t} label={t} acc={acc}/>)}
+      </div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',paddingTop:9,borderTop:'1px solid var(--border)'}}>
+        <span style={{fontSize:11,color:'var(--ink-light)',display:'flex',alignItems:'center',gap:4}}>
+          <span style={{width:6,height:6,borderRadius:'50%',background:sColor(contact.strength),display:'inline-block',flexShrink:0}}/>
+          {relTime(contact.lastContact)}
+        </span>
+        <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
+          <BirthdayBadge contact={contact}/>
+          <DueBadge contact={contact}/>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ── CONTACT ROW (list) ─── */
+const ContactRow = ({contact, selected, onClick, acc}) => {
+  const [hov, setHov] = useState(false);
+  return(
+    <div onClick={onClick} onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+      style={{display:'flex',alignItems:'center',gap:12,padding:'10px 14px',background:selected||hov?'white':'transparent',borderLeft:`3px solid ${selected?acc:'transparent'}`,borderRadius:selected||hov?'0 8px 8px 0':0,cursor:'pointer',transition:'all .15s',boxShadow:selected||hov?'var(--sh-s)':'none',marginBottom:1}}>
+      <Avi contact={contact} size={40}/>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{display:'flex',alignItems:'baseline',gap:7,flexWrap:'wrap'}}>
+          <span style={{fontFamily:"'Lora',serif",fontWeight:600,fontSize:14}}>{contact.name}</span>
+          <span style={{fontSize:12,color:'var(--ink-light)'}}>· {contact.role}, {contact.company}</span>
+        </div>
+        <div style={{display:'flex',gap:4,marginTop:3,flexWrap:'wrap'}}>
+          {contact.tags.slice(0,3).map(t=><Chip key={t} label={t} acc={acc}/>)}
+        </div>
+      </div>
+      <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4,flexShrink:0}}>
+        <span style={{fontSize:11,color:'var(--ink-light)'}}>{relTime(contact.lastContact)}</span>
+        <DueBadge contact={contact}/>
+      </div>
+    </div>
+  );
+};
+
+/* ── TIMELINE ITEM ─── */
+const TLItem = ({item, isLast}) => (
+  <div style={{display:'flex',gap:12}}>
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',width:30,flexShrink:0}}>
+      <div style={{width:30,height:30,borderRadius:'50%',background:'var(--paper)',border:'1.5px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0}}>
+        {iIcon(item.type)}
+      </div>
+      {!isLast && <div style={{width:1.5,flex:1,background:'var(--border)',minHeight:14,margin:'4px 0'}}/>}
+    </div>
+    <div style={{paddingBottom:isLast?0:18,flex:1}}>
+      <div style={{fontSize:11,color:'var(--ink-light)',marginBottom:3,textTransform:'capitalize'}}>{item.type} · {relTime(item.date)}</div>
+      <div style={{fontSize:13,color:'var(--ink-mid)',lineHeight:1.55}}>{item.note}</div>
+    </div>
+  </div>
+);
+
+/* ── QUICK LOG MODAL ─── */
+const QuickLog = ({contact, onClose, onSave, acc}) => {
+  const [type, setType] = useState('coffee');
+  const [note, setNote] = useState('');
+  const types = ['coffee','call','video','email','meeting','event','message'];
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(42,36,32,.38)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:16}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:16,padding:24,width:'100%',maxWidth:420,boxShadow:'var(--sh-l)',animation:'fadeUp .2s ease'}}>
+        <div style={{fontFamily:"'Lora',serif",fontSize:18,fontWeight:600,marginBottom:3}}>Log interaction</div>
+        <div style={{fontSize:13,color:'var(--ink-light)',marginBottom:20}}>with {contact.name}</div>
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:11,fontWeight:600,letterSpacing:'.07em',textTransform:'uppercase',color:'var(--ink-light)',marginBottom:8}}>Type</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+            {types.map(t=>(
+              <button key={t} onClick={()=>setType(t)} style={{padding:'5px 11px',borderRadius:20,border:`1.5px solid ${type===t?acc:'var(--border)'}`,background:type===t?`${acc}18`:'var(--paper)',color:type===t?acc:'var(--ink-mid)',fontSize:12,fontWeight:type===t?600:400,transition:'all .13s'}}>
+                {iIcon(t)} {t}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{marginBottom:20}}>
+          <div style={{fontSize:11,fontWeight:600,letterSpacing:'.07em',textTransform:'uppercase',color:'var(--ink-light)',marginBottom:8}}>Note</div>
+          <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="What did you talk about?" rows={3}
+            style={{width:'100%',padding:'10px 12px',border:'1.5px solid var(--border)',borderRadius:8,background:'var(--paper)',color:'var(--ink)',fontSize:13,fontFamily:'inherit',resize:'none',outline:'none',lineHeight:1.5}}/>
+        </div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button onClick={onClose} style={{padding:'8px 16px',borderRadius:8,border:'1.5px solid var(--border)',background:'transparent',color:'var(--ink-mid)',fontSize:13}}>Cancel</button>
+          <button onClick={()=>{onSave({type,note});onClose();}} style={{padding:'8px 20px',borderRadius:8,border:'none',background:acc,color:'white',fontSize:13,fontWeight:600}}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+/* ── ADD ACTIVITY MODAL ─── */
+const AddActivityModal = ({contacts, onClose, onLog, acc}) => {
+  const todayStr = TODAY.toISOString().split('T')[0];
+  const [q, setQ] = useState('');
+  const [selected, setSelected] = useState(null);
+  const [showDrop, setShowDrop] = useState(false);
+  const [type, setType] = useState('coffee');
+  const [date, setDate] = useState(todayStr);
+  const [note, setNote] = useState('');
+  const [errors, setErrors] = useState({});
+  const inputRef = React.useRef();
+
+  const filtered = q.trim().length > 0
+    ? contacts.filter(c => c.name.toLowerCase().includes(q.toLowerCase()) || (c.company||'').toLowerCase().includes(q.toLowerCase())).slice(0,6)
+    : [];
+
+  const pickContact = c => { setSelected(c); setQ(c.name); setShowDrop(false); };
+
+  const validate = () => {
+    const e = {};
+    if(!selected) e.contact = 'Select a contact';
+    if(!note.trim()) e.note = 'Note is required';
+    if(!date) e.date = 'Please select a date';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSave = () => {
+    if(!validate()) return;
+    onLog(selected.id, {type, note: note.trim(), date});
+    onClose();
+  };
+
+  const types = ['coffee','call','video','email','meeting','event','message','note'];
+
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(42,36,32,.42)',backdropFilter:'blur(5px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:600,padding:16}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:16,width:'100%',maxWidth:460,boxShadow:'var(--sh-l)',display:'flex',flexDirection:'column',maxHeight:'92vh',overflow:'hidden'}}>
+        {/* Header */}
+        <div style={{padding:'20px 24px 16px',borderBottom:'1px solid var(--border)',flexShrink:0}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <div style={{fontFamily:"'Lora',serif",fontSize:19,fontWeight:700}}>Log Activity</div>
+            <button onClick={onClose} style={{width:30,height:30,borderRadius:'50%',border:'1.5px solid var(--border)',background:'var(--paper)',fontSize:17,color:'var(--ink-mid)',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,cursor:'pointer'}}>×</button>
+          </div>
+          <div style={{fontSize:12.5,color:'var(--ink-light)',marginTop:3}}>All fields are required</div>
+        </div>
+        {/* Body */}
+        <div style={{flex:1,overflow:'auto',padding:'20px 24px'}}>
+          {/* Contact search */}
+          <div style={{marginBottom:16,position:'relative'}}>
+            <div style={{fontSize:11,fontWeight:700,letterSpacing:'.07em',textTransform:'uppercase',color:'var(--ink-light)',marginBottom:6}}>Contact</div>
+            <div style={{position:'relative'}}>
+              <input ref={inputRef} type="text" value={q} placeholder="Search by name…"
+                onChange={e=>{setQ(e.target.value);setSelected(null);setShowDrop(true);setErrors(p=>({...p,contact:''}));}}
+                onFocus={()=>setShowDrop(true)}
+                style={{width:'100%',padding:'10px 12px',border:`1.5px solid ${errors.contact?'#C44F3A':'var(--border)'}`,borderRadius:8,background:'var(--paper)',color:'var(--ink)',fontSize:13,outline:'none',transition:'border-color .14s',boxSizing:'border-box'}}
+                onFocus2={e=>e.target.style.borderColor=acc}/>
+              {selected && (
+                <div style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',display:'flex',alignItems:'center',gap:6,pointerEvents:'none'}}>
+                  <Avi contact={selected} size={22} ring={false}/>
+                  <span style={{fontSize:11,fontWeight:600,color:'var(--green)'}}>✓</span>
+                </div>
+              )}
+            </div>
+            {errors.contact && <div style={{fontSize:11,color:'#C44F3A',marginTop:3}}>{errors.contact}</div>}
+            {showDrop && filtered.length>0 && (
+              <div style={{position:'absolute',top:'100%',left:0,right:0,background:'white',border:'1.5px solid var(--border)',borderRadius:10,boxShadow:'var(--sh-m)',zIndex:10,marginTop:4,overflow:'hidden'}}>
+                {filtered.map((c,i)=>(
+                  <div key={c.id} onClick={()=>pickContact(c)} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',cursor:'pointer',borderBottom:i<filtered.length-1?'1px solid var(--border)':'none',background:'white',transition:'background .12s'}}
+                    onMouseEnter={e=>e.currentTarget.style.background='var(--paper)'}
+                    onMouseLeave={e=>e.currentTarget.style.background='white'}>
+                    <Avi contact={c} size={28} ring={false}/>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:600}}>{c.name}</div>
+                      <div style={{fontSize:11.5,color:'var(--ink-light)'}}>{c.role}{c.company?' · '+c.company:''}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Date */}
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:11,fontWeight:700,letterSpacing:'.07em',textTransform:'uppercase',color:'var(--ink-light)',marginBottom:6}}>Date</div>
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)}
+              style={{width:'100%',padding:'10px 12px',border:`1.5px solid ${errors.date?'#C44F3A':'var(--border)'}`,borderRadius:8,background:'var(--paper)',color:'var(--ink)',fontSize:13,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/>
+            {errors.date && <div style={{fontSize:11,color:'#C44F3A',marginTop:3}}>{errors.date}</div>}
+          </div>
+
+          {/* Type */}
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:11,fontWeight:700,letterSpacing:'.07em',textTransform:'uppercase',color:'var(--ink-light)',marginBottom:8}}>Interaction type</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+              {types.map(t=>(
+                <button key={t} onClick={()=>setType(t)} style={{padding:'6px 12px',borderRadius:20,border:`1.5px solid ${type===t?acc:'var(--border)'}`,background:type===t?`${acc}18`:'var(--paper)',color:type===t?acc:'var(--ink-mid)',fontSize:12,fontWeight:type===t?600:400,cursor:'pointer',transition:'all .13s'}}>
+                  {iIcon(t)} {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Note */}
+          <div>
+            <div style={{fontSize:11,fontWeight:700,letterSpacing:'.07em',textTransform:'uppercase',color:'var(--ink-light)',marginBottom:6}}>Note</div>
+            <textarea value={note} onChange={e=>{setNote(e.target.value);setErrors(p=>({...p,note:''}));}} placeholder="What did you talk about?" rows={4}
+              style={{width:'100%',padding:'10px 12px',border:`1.5px solid ${errors.note?'#C44F3A':'var(--border)'}`,borderRadius:8,background:'var(--paper)',color:'var(--ink)',fontSize:13,fontFamily:'inherit',resize:'none',outline:'none',lineHeight:1.6,boxSizing:'border-box',transition:'border-color .14s'}}
+              onFocus={e=>e.target.style.borderColor=errors.note?'#C44F3A':acc}
+              onBlur={e=>e.target.style.borderColor=errors.note?'#C44F3A':'var(--border)'}/>
+            {errors.note && <div style={{fontSize:11,color:'#C44F3A',marginTop:3}}>{errors.note}</div>}
+          </div>
+        </div>
+        {/* Footer */}
+        <div style={{padding:'14px 24px',borderTop:'1px solid var(--border)',display:'flex',gap:8,justifyContent:'flex-end',flexShrink:0,background:'var(--paper)'}}>
+          <button onClick={onClose} style={{padding:'9px 18px',borderRadius:8,border:'1.5px solid var(--border)',background:'white',color:'var(--ink-mid)',fontSize:13,cursor:'pointer'}}>Cancel</button>
+          <button onClick={handleSave} style={{padding:'9px 22px',borderRadius:8,border:'none',background:acc,color:'white',fontSize:13,fontWeight:600,cursor:'pointer'}}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ── ADD CONTACT MODAL ─── */
+const AddContactModal = ({onClose, onSave, acc}) => {
+  const [form, setForm] = useState({name:'',role:'',company:'',email:'',phone:'',linkedin:'',twitter:'',birthday:'',location:'',relationship:'',notes:'',followUp:'in-1-week',tags:[]});
+  const [tagInput, setTagInput] = useState('');
+  const [errors, setErrors] = useState({});
+  const set = (k,v) => setForm(p=>({...p,[k]:v}));
+  const addTag = () => {
+    const t=tagInput.trim().toLowerCase().replace(/[^a-z0-9-]/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+    if(t && !form.tags.includes(t)) set('tags',[...form.tags,t]);
+    setTagInput('');
+  };
+  const fwdMap = {'in-3-days':3,'in-1-week':7,'in-2-weeks':14,'in-1-month':30,'in-3-months':90};
+  const handleSave = () => {
+    if(!form.name.trim()){setErrors({name:'Required'});return;}
+    const d=new Date(TODAY); d.setDate(d.getDate()+(fwdMap[form.followUp]||7));
+    const newC = {
+      id:Date.now(), name:form.name.trim(), role:form.role.trim()||'Contact',
+      company:form.company.trim(), email:form.email.trim()||null, phone:form.phone.trim()||null,
+      tags:form.tags, lastContact:TODAY.toISOString().split('T')[0],
+      nextFollowUp:d.toISOString().split('T')[0], strength:.5,
+      birthday:form.birthday.trim()||null, location:form.location.trim()||null,
+      relationship:form.relationship||null, cadence:form.relationship?({'Friend':30,'Colleague':60,'Mentor':30,'Investor':7,'Partner':14,'Collaborator':90}[form.relationship]||30):null,
+      notes:form.notes.trim(),
+      social:{linkedin:form.linkedin.trim()||null, twitter:form.twitter.trim()||null},
+      interactions:[{date:TODAY.toISOString().split('T')[0],type:'note',note:'Added to CRM'+(form.notes?` — ${form.notes.slice(0,50)}`:""),}],
+    };
+    onSave(newC); onClose();
+  };
+  const FLabel = ({t}) => <div style={{fontSize:11,fontWeight:600,letterSpacing:'.07em',textTransform:'uppercase',color:'var(--ink-light)',marginBottom:5}}>{t}</div>;
+  const FInput = ({label,value,onChange,placeholder,type='text',error,prefix}) => (
+    <div style={{flex:1}}>
+      <FLabel t={label}/>
+      <div style={{display:'flex',alignItems:'center',border:`1.5px solid ${error?'#C44F3A':'var(--border)'}`,borderRadius:8,background:'var(--paper)',overflow:'hidden',transition:'border-color .14s'}}
+        onFocusCapture={e=>e.currentTarget.style.borderColor=error?'#C44F3A':acc}
+        onBlurCapture={e=>e.currentTarget.style.borderColor=error?'#C44F3A':'var(--border)'}>
+        {prefix&&<span style={{padding:'0 6px 0 11px',color:'var(--ink-faint)',fontSize:12,flexShrink:0}}>{prefix}</span>}
+        <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
+          style={{flex:1,padding:'9px 11px',border:'none',background:'transparent',color:'var(--ink)',fontSize:13,outline:'none',paddingLeft:prefix?0:11}}/>
+      </div>
+      {error&&<div style={{fontSize:11,color:'#C44F3A',marginTop:3}}>{error}</div>}
+    </div>
+  );
+  const FSec = ({label}) => <div style={{fontSize:10.5,fontWeight:700,letterSpacing:'.09em',textTransform:'uppercase',color:'var(--ink-faint)',margin:'16px 0 10px',paddingBottom:5,borderBottom:'1px solid var(--border)'}}>{label}</div>;
+  const aviBg = form.name ? AVI_COLORS[form.name.charCodeAt(0)%AVI_COLORS.length] : 'var(--card)';
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(42,36,32,.4)',backdropFilter:'blur(5px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:500,padding:16,animation:'fadeUp .18s ease'}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:16,width:'100%',maxWidth:540,maxHeight:'92vh',display:'flex',flexDirection:'column',boxShadow:'var(--sh-l)',overflow:'hidden'}}>
+        {/* Header */}
+        <div style={{padding:'20px 24px 16px',borderBottom:'1px solid var(--border)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <div>
+            <div style={{fontFamily:"'Lora',serif",fontSize:19,fontWeight:700}}>Add a new contact</div>
+            <div style={{fontSize:12,color:'var(--ink-light)',marginTop:2}}>They'll start with an Active relationship score</div>
+          </div>
+          <button onClick={onClose} style={{width:30,height:30,borderRadius:'50%',border:'1.5px solid var(--border)',background:'var(--paper)',fontSize:17,color:'var(--ink-mid)',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}>×</button>
+        </div>
+        {/* Body */}
+        <div style={{flex:1,overflow:'auto',padding:'20px 24px'}}>
+          {/* Name row with avatar preview */}
+          <div style={{display:'flex',gap:14,alignItems:'flex-start',marginBottom:4}}>
+            <div style={{width:52,height:52,borderRadius:'50%',background:aviBg,border:form.name?'none':'2px dashed var(--border)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:18,fontWeight:600,color:'white',fontFamily:"'Lora',serif",transition:'background .2s'}}>
+              {form.name ? initials(form.name) : <span style={{color:'var(--ink-faint)',fontSize:22,fontWeight:300}}>+</span>}
+            </div>
+            <div style={{flex:1}}>
+              <FInput label="Full name *" value={form.name} onChange={v=>{set('name',v);setErrors({});}} placeholder="Jane Smith" error={errors.name}/>
+            </div>
+          </div>
+          <div style={{display:'flex',gap:10,marginTop:10}}>
+            <FInput label="Role" value={form.role} onChange={v=>set('role',v)} placeholder="Product Manager"/>
+            <FInput label="Company" value={form.company} onChange={v=>set('company',v)} placeholder="Acme Inc."/>
+          </div>
+          <FSec label="Contact details"/>
+          <div style={{display:'flex',gap:10}}>
+            <FInput label="Email" value={form.email} onChange={v=>set('email',v)} placeholder="jane@company.com" type="email"/>
+            <FInput label="Phone" value={form.phone} onChange={v=>set('phone',v)} placeholder="+1 (555) 000-0000" type="tel"/>
+          </div>
+          <FSec label="Location & birthday"/>
+          <div style={{display:'flex',gap:10,marginBottom:4}}>
+            <FInput label="Location" value={form.location} onChange={v=>set('location',v)} placeholder="Taipei, Taiwan"/>
+            <div style={{flex:1}}>
+              <FLabel t="Birthday (MM-DD)"/>
+              <div style={{display:'flex',alignItems:'center',border:'1.5px solid var(--border)',borderRadius:8,background:'var(--paper)',overflow:'hidden',transition:'border-color .14s'}}
+                onFocusCapture={e=>e.currentTarget.style.borderColor=acc}
+                onBlurCapture={e=>e.currentTarget.style.borderColor='var(--border)'}>
+                <span style={{padding:'0 6px 0 11px',color:'var(--ink-faint)',fontSize:15,flexShrink:0}}>🎂</span>
+                <input type="text" value={form.birthday} onChange={e=>set('birthday',e.target.value)} placeholder="e.g. 12-20"
+                  style={{flex:1,padding:'9px 11px 9px 4px',border:'none',background:'transparent',color:'var(--ink)',fontSize:13,outline:'none'}}/>
+              </div>
+            </div>
+          </div>
+          <div style={{marginBottom:4}}>
+            <FLabel t="Relationship type"/>
+            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+              {['Friend','Colleague','Mentor','Investor','Partner','Collaborator'].map(r=>{
+                const s=getRelStyle(r);
+                return <button key={r} onClick={()=>set('relationship',form.relationship===r?'':r)}
+                  style={{padding:'5px 13px',borderRadius:20,border:`1.5px solid ${form.relationship===r?s.color:'var(--border)'}`,background:form.relationship===r?s.bg:'var(--paper)',color:form.relationship===r?s.color:'var(--ink-mid)',fontSize:12,fontWeight:form.relationship===r?600:400,cursor:'pointer',transition:'all .13s'}}>{r}</button>;
+              })}
+            </div>
+          </div>
+          <FSec label="Social links"/>
+          <div style={{display:'flex',gap:10}}>
+            <FInput label="LinkedIn" value={form.linkedin} onChange={v=>set('linkedin',v)} placeholder="username" prefix="in/"/>
+            <FInput label="Twitter / X" value={form.twitter} onChange={v=>set('twitter',v)} placeholder="username" prefix="@"/>
+          </div>
+          <FSec label="Tags"/>
+          <div style={{display:'flex',flexWrap:'wrap',gap:5,marginBottom:form.tags.length?8:0}}>
+            {form.tags.map(t=>(
+              <span key={t} style={{display:'inline-flex',alignItems:'center',gap:4,padding:'3px 10px',borderRadius:20,fontSize:12,fontWeight:500,background:`${acc}18`,color:acc,border:`1px solid ${acc}44`}}>
+                {t}
+                <button onClick={()=>set('tags',form.tags.filter(x=>x!==t))} style={{border:'none',background:'none',color:acc,fontSize:14,cursor:'pointer',lineHeight:1,padding:0,opacity:.6}}>×</button>
+              </span>
+            ))}
+          </div>
+          <div style={{display:'flex',gap:8}}>
+            <input value={tagInput} onChange={e=>setTagInput(e.target.value)} placeholder="Add a tag…"
+              onKeyDown={e=>{if(e.key==='Enter'||e.key===','){e.preventDefault();addTag();}}}
+              style={{flex:1,padding:'8px 11px',border:'1.5px solid var(--border)',borderRadius:8,background:'var(--paper)',color:'var(--ink)',fontSize:13,outline:'none',transition:'border-color .14s'}}
+              onFocus={e=>e.target.style.borderColor=acc} onBlur={e=>e.target.style.borderColor='var(--border)'}/>
+            <button onClick={addTag} style={{padding:'8px 14px',borderRadius:8,border:`1.5px solid ${acc}`,background:`${acc}18`,color:acc,fontSize:13,fontWeight:600}}>Add</button>
+          </div>
+          <div style={{fontSize:11,color:'var(--ink-faint)',marginTop:4}}>Press Enter or comma to add</div>
+          <FSec label="Notes"/>
+          <textarea value={form.notes} onChange={e=>set('notes',e.target.value)} placeholder="How did you meet? What do they work on?" rows={3}
+            style={{width:'100%',padding:'10px 12px',border:'1.5px solid var(--border)',borderRadius:8,background:'var(--paper)',color:'var(--ink)',fontSize:13,fontFamily:'inherit',resize:'none',outline:'none',lineHeight:1.5,transition:'border-color .14s'}}
+            onFocus={e=>e.target.style.borderColor=acc} onBlur={e=>e.target.style.borderColor='var(--border)'}/>
+          <FSec label="First follow-up"/>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+            {[['in-3-days','In 3 days'],['in-1-week','In 1 week'],['in-2-weeks','In 2 weeks'],['in-1-month','In 1 month'],['in-3-months','In 3 months']].map(([v,l])=>(
+              <button key={v} onClick={()=>set('followUp',v)} style={{padding:'6px 14px',borderRadius:20,border:`1.5px solid ${form.followUp===v?acc:'var(--border)'}`,background:form.followUp===v?`${acc}18`:'var(--paper)',color:form.followUp===v?acc:'var(--ink-mid)',fontSize:12,fontWeight:form.followUp===v?600:400,transition:'all .13s'}}>{l}</button>
+            ))}
+          </div>
+        </div>
+        {/* Footer */}
+        <div style={{padding:'14px 24px',borderTop:'1px solid var(--border)',display:'flex',gap:8,justifyContent:'flex-end',flexShrink:0,background:'var(--paper)'}}>
+          <button onClick={onClose} style={{padding:'9px 18px',borderRadius:8,border:'1.5px solid var(--border)',background:'white',color:'var(--ink-mid)',fontSize:13}}>Cancel</button>
+          <button onClick={handleSave} style={{padding:'9px 22px',borderRadius:8,border:'none',background:acc,color:'white',fontSize:13,fontWeight:600}}>Add contact</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ── CONTACT DETAIL PANEL ─── */
+const Detail = ({contact, onClose, onLog, acc, isMobile}) => {
+  const [logOpen, setLogOpen] = useState(false);
+  const sc = sColor(contact.strength);
+  const panelStyle = isMobile
+    ? {position:'fixed',inset:0,zIndex:200,background:'white',display:'flex',flexDirection:'column',overflow:'hidden',animation:'slideUp .22s ease'}
+    : {width:360,flexShrink:0,background:'white',borderLeft:'1px solid var(--border)',display:'flex',flexDirection:'column',height:'100%',overflow:'hidden',animation:'slideRight .22s ease'};
+  return(
+    <div style={panelStyle}>
+      <div style={{padding:'16px 20px',borderBottom:'1px solid var(--border)',flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+          <button onClick={onClose} style={{width:30,height:30,borderRadius:'50%',border:'1.5px solid var(--border)',background:'var(--paper)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,color:'var(--ink-mid)',lineHeight:1}}>←</button>
+          <div style={{display:'flex',gap:6}}>
+            <button onClick={()=>setLogOpen(true)} style={{padding:'6px 13px',borderRadius:8,border:'1.5px solid var(--border)',background:'var(--paper)',color:'var(--ink-mid)',fontSize:12,fontWeight:600}}>+ Log</button>
+            <button style={{padding:'6px 13px',borderRadius:8,border:'none',background:acc,color:'white',fontSize:12,fontWeight:600}}>Message</button>
+          </div>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:14}}>
+          <Avi contact={contact} size={58}/>
+          <div>
+            <div style={{fontFamily:"'Lora',serif",fontSize:19,fontWeight:700,lineHeight:1.2}}>{contact.name}</div>
+            <div style={{fontSize:13,color:'var(--ink-mid)',marginTop:2}}>{contact.role}</div>
+            <div style={{fontSize:12,color:'var(--ink-light)'}}>{contact.company}</div>
+            {contact.relationship && <div style={{marginTop:5}}><RelChip rel={contact.relationship} size="lg"/></div>}
+          </div>
+        </div>
+        <div style={{marginTop:12,padding:'8px 12px',borderRadius:8,background:'var(--paper)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <div style={{display:'flex',alignItems:'center',gap:7}}>
+            <div style={{width:8,height:8,borderRadius:'50%',background:sc,flexShrink:0}}/>
+            <span style={{fontSize:12,color:'var(--ink-mid)',fontWeight:500}}>Relationship: <span style={{color:sc}}>{sLabel(contact.strength)}</span></span>
+          </div>
+          <div style={{width:72,height:4,borderRadius:2,background:'var(--border)',overflow:'hidden',flexShrink:0}}>
+            <div style={{width:`${contact.strength*100}%`,height:'100%',background:sc,borderRadius:2,transition:'width .6s ease'}}/>
+          </div>
+        </div>
+        {isDue(contact) && <div style={{marginTop:8}}><DueBadge contact={contact}/></div>}
+        {contact.cadence && (
+          <div style={{marginTop:10,padding:'9px 12px',borderRadius:8,background:'var(--paper)'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
+              <span style={{fontSize:10.5,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'var(--ink-faint)'}}>Reconnect cadence</span>
+              <span style={{fontSize:11,color:'var(--ink-mid)'}}>{(()=>{const d=cadenceDaysLeft(contact.lastContact,contact.cadence);return d>0?`${d}d remaining`:`${Math.abs(d)}d overdue`;})()}· {cadenceLabel(contact.cadence)}</span>
+            </div>
+            <div style={{height:4,borderRadius:2,background:'var(--border)',overflow:'hidden'}}>
+              <div style={{width:`${Math.min(100,Math.floor((TODAY-new Date(contact.lastContact))/864e5)/contact.cadence*100)}%`,height:'100%',background:cadenceDaysLeft(contact.lastContact,contact.cadence)<0?'#C44F3A':cadenceDaysLeft(contact.lastContact,contact.cadence)<contact.cadence*.3?'#C49B3A':'#5A8A6A',borderRadius:2,transition:'width .6s ease'}}/>
+            </div>
+            <div style={{fontSize:10.5,color:'var(--ink-faint)',marginTop:4}}>Last contact {relTime(contact.lastContact)}</div>
+          </div>
+        )}
+      </div>
+      <div style={{flex:1,overflow:'auto',padding:'16px 20px'}}>
+        <SectionHead label="Contact"/>
+        {contact.email && <div style={{fontSize:13,color:'var(--ink-mid)',marginBottom:5,display:'flex',alignItems:'center',gap:8}}><span style={{color:'var(--ink-faint)',width:16,textAlign:'center'}}>✉</span>{contact.email}</div>}
+        {contact.phone && <div style={{fontSize:13,color:'var(--ink-mid)',marginBottom:5,display:'flex',alignItems:'center',gap:8}}><span style={{color:'var(--ink-faint)',width:16,textAlign:'center'}}>📞</span>{contact.phone}</div>}
+        {contact.location && <div style={{fontSize:13,color:'var(--ink-mid)',marginBottom:5,display:'flex',alignItems:'center',gap:8}}><span style={{color:'var(--ink-faint)',width:16,textAlign:'center'}}>📍</span>{contact.location}</div>}
+        {(contact.social?.linkedin||contact.social?.twitter) && <>
+          <SectionHead label="Social" mt/>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+            {contact.social?.linkedin && <span style={{padding:'3px 10px',borderRadius:20,background:'#EBF4FF',color:'#2563EB',fontSize:11.5,fontWeight:500}}>in/{contact.social.linkedin}</span>}
+            {contact.social?.twitter && <span style={{padding:'3px 10px',borderRadius:20,background:'#F0F8FF',color:'#1DA1F2',fontSize:11.5,fontWeight:500}}>@{contact.social.twitter}</span>}
+          </div>
+        </>}
+        <SectionHead label="Tags" mt/>
+        <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+          {contact.tags.map(t=><Chip key={t} label={t} accent acc={acc}/>)}
+        </div>
+        {contact.birthday && <>
+          <SectionHead label="Important dates" mt/>
+          <div style={{display:'flex',alignItems:'center',gap:12,padding:'10px 13px',background:'var(--paper)',borderRadius:9,border:'1px solid var(--border)'}}>
+            <span style={{fontSize:22,lineHeight:1}}>🎂</span>
+            <div style={{flex:1}}>
+              <div style={{fontSize:10.5,color:'var(--ink-light)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',marginBottom:2}}>Birthday</div>
+              <div style={{fontSize:14,fontWeight:600,color:'var(--ink)'}}>{formatBirthday(contact.birthday)}</div>
+            </div>
+            {birthdayDaysAway(contact.birthday)<=30 && (
+              <span style={{fontSize:11,fontWeight:600,color:'#9B3F8A',background:'#FDF0FB',padding:'3px 9px',borderRadius:12,border:'1px solid #E8C4E0',flexShrink:0}}>
+                {birthdayDaysAway(contact.birthday)===0?'🎉 Today!':birthdayDaysAway(contact.birthday)===1?'Tomorrow':`in ${birthdayDaysAway(contact.birthday)}d`}
+              </span>
+            )}
+          </div>
+        </>}
+        <SectionHead label="Notes" mt/>
+        <div style={{fontSize:13,color:'var(--ink-mid)',lineHeight:1.65,fontStyle:'italic',fontFamily:"'Lora',serif"}}>{contact.notes}</div>
+        <SectionHead label="Interaction history" mt/>
+        <AISuggestion contact={contact} acc={acc} onLog={onLog}/>
+        <div style={{marginTop:14}}>
+          {contact.interactions.map((item,i)=><TLItem key={i} item={item} isLast={i===contact.interactions.length-1}/>)}
+        </div>
+      </div>
+      {logOpen && <QuickLog contact={contact} acc={acc} onClose={()=>setLogOpen(false)} onSave={d=>onLog(contact.id,d)}/>}
+    </div>
+  );
+};
+
+/* ── TODAY WIDGET ─── */
+const TodayWidget = ({contacts, onSelect, acc}) => {
+  const due = contacts.filter(c => c.nextFollowUp && Math.floor((new Date(c.nextFollowUp)-TODAY)/(864e5))<=0).slice(0,3);
+  if(due.length===0) return(
+    <div style={{padding:'10px 12px',background:'#EAF3EC',borderRadius:9,marginTop:10}}>
+      <div style={{fontSize:12,fontWeight:600,color:'#2A8C5E',marginBottom:2}}>🌱 All caught up!</div>
+      <div style={{fontSize:11,color:'#5A8A6A'}}>No follow-ups due today.</div>
+    </div>
+  );
+  return(
+    <div style={{marginTop:10}}>
+      <div style={{fontSize:10,fontWeight:700,letterSpacing:'.09em',textTransform:'uppercase',color:'var(--ink-faint)',marginBottom:7}}>Reach out today</div>
+      {due.map(c=>(
+        <div key={c.id} onClick={()=>onSelect(c)} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 9px',borderRadius:8,background:'var(--card)',cursor:'pointer',border:'1px solid var(--border)',marginBottom:5,transition:'all .14s'}}
+          onMouseEnter={e=>{e.currentTarget.style.background='white';e.currentTarget.style.borderColor=acc;}}
+          onMouseLeave={e=>{e.currentTarget.style.background='var(--card)';e.currentTarget.style.borderColor='var(--border)';}}>
+          <Avi contact={c} size={26} ring={false}/>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:12,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.name}</div>
+            <div style={{fontSize:10.5,color:'var(--ink-light)'}}>{relFuture(c.nextFollowUp)}</div>
+          </div>
+          <span style={{fontSize:14}}>{c.strength<.2?'🌵':c.strength<.5?'🌿':'🌸'}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+/* ── SIDEBAR ─── */
+const Sidebar = ({view, onChange, contacts, onSelect, acc, collapsed, dbStatus, onLogActivity}) => {
+  const statusColor = dbStatus==='connected'?'#5A8A6A':dbStatus==='loading'?'#C49B3A':'#C44F3A';
+  const statusTip = dbStatus==='connected'?'Live – Supabase connected':dbStatus==='loading'?'Connecting…':dbStatus==='setup'?'Tables not found – see setup':'Offline – showing sample data';
+  const nav = [
+    {id:'home',icon:'❖',label:'This Week',count:null},
+    {id:'contacts',icon:'◉',label:'All Contacts',count:contacts.length},
+    {id:'river',icon:'◈',label:'Activity River',count:null},
+    {id:'reminders',icon:'◎',label:'Follow-ups',count:contacts.filter(isDue).length},
+  ];
+  return(
+    <div style={{width:collapsed?52:216,background:'var(--paper)',borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',flexShrink:0,transition:'width .22s ease',overflow:'hidden'}}>
+      <div style={{padding:collapsed?'17px 0':'17px 15px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:collapsed?'center':'flex-start'}}>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div style={{width:28,height:28,borderRadius:7,background:acc,display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontSize:14,fontWeight:700,fontFamily:"'Lora',serif",flexShrink:0}}>C</div>
+          {!collapsed && <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <div style={{fontFamily:"'Lora',serif",fontSize:15.5,fontWeight:700,whiteSpace:'nowrap'}}>CRM <span style={{fontStyle:'italic',fontWeight:400,color:'var(--ink-light)',fontSize:14}}>Pro</span></div>
+            <div title={statusTip} style={{width:7,height:7,borderRadius:'50%',background:statusColor,flexShrink:0,boxShadow:`0 0 0 2px ${statusColor}33`,transition:'background .4s'}}/>  
+          </div>}
+        </div>
+      </div>
+      <nav style={{padding:'8px 0',flex:1}}>
+        {nav.map(n=>(
+          <div key={n.id} onClick={()=>onChange(n.id)}
+            style={{display:'flex',alignItems:'center',gap:9,padding:collapsed?'10px 0':'10px 14px',justifyContent:collapsed?'center':'flex-start',cursor:'pointer',borderLeft:`3px solid ${view===n.id?acc:'transparent'}`,background:view===n.id?'var(--card)':'transparent',color:view===n.id?'var(--ink)':'var(--ink-mid)',fontWeight:view===n.id?600:400,fontSize:13,transition:'all .14s'}}>
+            <span style={{fontSize:15,lineHeight:1,flexShrink:0}}>{n.icon}</span>
+            {!collapsed && <>
+              <span style={{flex:1,whiteSpace:'nowrap'}}>{n.label}</span>
+              {n.count!==null && <span style={{fontSize:10,fontWeight:700,background:view===n.id?acc:'var(--border)',color:view===n.id?'white':'var(--ink-light)',borderRadius:10,padding:'1px 6px',minWidth:18,textAlign:'center'}}>{n.count}</span>}
+            </>}
+          </div>
+        ))}
+      </nav>
+      {!collapsed && (
+        <div style={{padding:'12px 14px',borderTop:'1px solid var(--border)'}}>
+          <button onClick={onLogActivity} style={{width:'100%',padding:'8px 12px',borderRadius:8,border:`1.5px solid ${acc}44`,background:`${acc}12`,color:acc,fontSize:12.5,fontWeight:600,cursor:'pointer',marginBottom:10,display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+            ✍️ Log Activity
+          </button>
+          <TodayWidget contacts={contacts} onSelect={onSelect} acc={acc}/>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ── SETUP BANNER ─── */
+const SETUP_SQL = `-- Run once in your Supabase SQL Editor:
+create table contacts (
+  id uuid primary key default gen_random_uuid(),
+  name text not null, role text, company text,
+  email text, phone text, tags text[] default '{}',
+  last_contact date, next_follow_up date,
+  strength float default 0.5,
+  notes text, social jsonb default '{}',
+  created_at timestamptz default now()
+);
+create table interactions (
+  id uuid primary key default gen_random_uuid(),
+  contact_id uuid references contacts(id) on delete cascade,
+  date date not null, type text not null, note text,
+  created_at timestamptz default now()
+);
+alter table contacts enable row level security;
+alter table interactions enable row level security;
+create policy "anon_all" on contacts for all using (true) with check (true);
+create policy "anon_all" on interactions for all using (true) with check (true);`;
+
+const SetupBanner = ({acc, onDismiss}) => {
+  const [copied, setCopied] = useState(false);
+  const copy = () => { navigator.clipboard.writeText(SETUP_SQL); setCopied(true); setTimeout(()=>setCopied(false),2000); };
+  return(
+    <div style={{margin:'16px 22px 0',padding:'14px 16px',background:'#FDF6E3',border:'1.5px solid #F0DFA0',borderRadius:10,flexShrink:0}}>
+      <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:8}}>
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:'#7A5A00',marginBottom:2}}>🛠 Supabase tables not found</div>
+          <div style={{fontSize:12,color:'#8B6A10',lineHeight:1.5}}>Run the SQL below in your <b>Supabase SQL Editor</b>, then refresh.</div>
+        </div>
+        <button onClick={onDismiss} style={{border:'none',background:'none',color:'#C49B3A',fontSize:18,cursor:'pointer',lineHeight:1,padding:0,flexShrink:0}}>×</button>
+      </div>
+      <div style={{position:'relative'}}>
+        <pre style={{background:'#29261B',color:'#E8DFA0',borderRadius:7,padding:'10px 12px',fontSize:10.5,lineHeight:1.6,overflow:'auto',maxHeight:140,fontFamily:'monospace',margin:0}}>{SETUP_SQL}</pre>
+        <button onClick={copy} style={{position:'absolute',top:6,right:6,padding:'4px 10px',borderRadius:6,border:'none',background:copied?'#5A8A6A':acc,color:'white',fontSize:11,fontWeight:600,cursor:'pointer',transition:'background .2s'}}>{copied?'✓ Copied':'Copy SQL'}</button>
+      </div>
+    </div>
+  );
+};
+
+/* ── CONTACTS VIEW ─── */
+const ContactsView = ({contacts, selected, onSelect, viewMode, acc, onAddClick, dbStatus, onDismissSetup}) => {
+  const [q, setQ] = useState('');
+  const filtered = useMemo(()=>{
+    if(!q) return contacts;
+    const lq=q.toLowerCase();
+    return contacts.filter(c=>c.name.toLowerCase().includes(lq)||c.company.toLowerCase().includes(lq)||c.role.toLowerCase().includes(lq)||c.tags.some(t=>t.includes(lq)));
+  },[contacts,q]);
+  return(
+    <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+      {dbStatus==='setup' && <SetupBanner acc={acc} onDismiss={onDismissSetup}/>}
+      <div style={{padding:'18px 22px 14px',borderBottom:'1px solid var(--border)',flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:13}}>
+          <div>
+            <div style={{fontFamily:"'Lora',serif",fontSize:21,fontWeight:700}}>Your Contacts</div>
+            <div style={{fontSize:12,color:'var(--ink-light)',marginTop:2}}>{contacts.length} people in your network</div>
+          </div>
+          <button onClick={onAddClick} style={{padding:'7px 14px',borderRadius:8,border:'none',background:acc,color:'white',fontSize:13,fontWeight:600,flexShrink:0}}>+ Add</button>
+        </div>
+        <div style={{position:'relative'}}>
+          <span style={{position:'absolute',left:11,top:'50%',transform:'translateY(-50%)',color:'var(--ink-faint)',fontSize:13,pointerEvents:'none'}}>🔍</span>
+          <input type="text" placeholder="Search by name, company, tag…" value={q} onChange={e=>setQ(e.target.value)}
+            style={{width:'100%',padding:'9px 12px 9px 32px',border:'1.5px solid var(--border)',borderRadius:8,background:'white',color:'var(--ink)',fontSize:13,outline:'none',transition:'border-color .14s'}}
+            onFocus={e=>e.target.style.borderColor=acc} onBlur={e=>e.target.style.borderColor='var(--border)'}/>
+        </div>
+      </div>
+      <div style={{flex:1,overflow:'auto',padding:'14px 22px'}}>
+        {viewMode==='grid' ? (
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(195px,1fr))',gap:11}}>
+            {filtered.map(c=><ContactCard key={c.id} contact={c} selected={selected?.id===c.id} onClick={()=>onSelect(c)} acc={acc}/>)}
+          </div>
+        ) : (
+          <div style={{display:'flex',flexDirection:'column'}}>
+            {filtered.map(c=><ContactRow key={c.id} contact={c} selected={selected?.id===c.id} onClick={()=>onSelect(c)} acc={acc}/>)}
+          </div>
+        )}
+        {filtered.length===0 && (
+          <div style={{textAlign:'center',padding:'56px 20px',color:'var(--ink-light)'}}>
+            <div style={{fontSize:32,marginBottom:12}}>🌿</div>
+            <div style={{fontFamily:"'Lora',serif",fontSize:16,marginBottom:4}}>No contacts found</div>
+            <div style={{fontSize:13}}>Try a different search</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/* ── ACTIVITY RIVER VIEW ─── */
+const RiverView = ({contacts, onSelect, acc}) => {
+  const events = useMemo(()=>
+    contacts.flatMap(c=>c.interactions.map(i=>({...i,contact:c})))
+      .sort((a,b)=>new Date(b.date)-new Date(a.date))
+  ,[contacts]);
+  return(
+    <div style={{flex:1,overflow:'auto',padding:'24px 32px'}}>
+      <div style={{maxWidth:620,margin:'0 auto'}}>
+        <div style={{fontFamily:"'Lora',serif",fontSize:22,fontWeight:700,marginBottom:3}}>Activity River</div>
+        <div style={{fontSize:13,color:'var(--ink-light)',marginBottom:26}}>Every interaction, flowing through time</div>
+        {events.map((ev,i)=>(
+          <div key={i} style={{display:'flex',gap:14}}>
+            <div style={{display:'flex',flexDirection:'column',alignItems:'center',width:34,flexShrink:0}}>
+              <div style={{width:34,height:34,borderRadius:'50%',background:'white',border:'2px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,flexShrink:0}}>{iIcon(ev.type)}</div>
+              {i<events.length-1 && <div style={{width:1.5,flex:1,background:'var(--border)',minHeight:12,margin:'3px 0'}}/>}
+            </div>
+            <div style={{flex:1,paddingBottom:i<events.length-1?18:0}}>
+              <div onClick={()=>onSelect(ev.contact)}
+                style={{background:'var(--card)',borderRadius:10,padding:'11px 15px',cursor:'pointer',border:'1.5px solid transparent',transition:'all .14s'}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=acc;e.currentTarget.style.background='white';}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor='transparent';e.currentTarget.style.background='var(--card)';}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:5}}>
+                  <Avi contact={ev.contact} size={22} ring={false}/>
+                  <span style={{fontWeight:600,fontSize:13}}>{ev.contact.name}</span>
+                  <span style={{fontSize:11,color:'var(--ink-faint)'}}>·</span>
+                  <span style={{fontSize:11,color:'var(--ink-light)'}}>{relTime(ev.date)}</span>
+                </div>
+                <div style={{fontSize:13,color:'var(--ink-mid)',lineHeight:1.55}}>{ev.note}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+/* ── REMINDERS VIEW ─── */
+const RemindersView = ({contacts, onSelect, onLog, acc}) => {
+  const sorted = [...contacts].filter(c=>c.nextFollowUp).sort((a,b)=>new Date(a.nextFollowUp)-new Date(b.nextFollowUp));
+  const over = sorted.filter(c=>Math.floor((new Date(c.nextFollowUp)-TODAY)/(864e5))<0);
+  const coming = sorted.filter(c=>Math.floor((new Date(c.nextFollowUp)-TODAY)/(864e5))>=0);
+  const quickLog = (e,cid) => { e.stopPropagation(); onLog(cid,{type:'message',note:'Quick check-in'}); };
+  const Sec = ({title,items,badge}) => items.length===0?null:(
+    <div style={{marginBottom:26}}>
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+        <div style={{fontFamily:"'Lora',serif",fontSize:17,fontWeight:600}}>{title}</div>
+        {badge && <span style={{fontSize:11,fontWeight:700,background:badge.bg,color:badge.color,borderRadius:10,padding:'2px 8px'}}>{badge.label}</span>}
+      </div>
+      {items.map(c=>(
+        <div key={c.id} onClick={()=>onSelect(c)}
+          style={{display:'flex',alignItems:'center',gap:12,padding:'12px 14px',background:'var(--card)',borderRadius:10,marginBottom:7,cursor:'pointer',border:'1.5px solid transparent',transition:'all .14s'}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor=acc;e.currentTarget.style.background='white';}}
+          onMouseLeave={e=>{e.currentTarget.style.borderColor='transparent';e.currentTarget.style.background='var(--card)';}}>
+          <Avi contact={c} size={40}/>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:600,fontSize:14}}>{c.name}</div>
+            <div style={{fontSize:12,color:'var(--ink-light)'}}>{c.role}{c.company?` · ${c.company}`:''}</div>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+            <DueBadge contact={c}/>
+            <button onClick={e=>quickLog(e,c.id)} style={{padding:'5px 11px',borderRadius:7,border:'1.5px solid var(--border)',background:'var(--paper)',color:'var(--ink-mid)',fontSize:11.5,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',transition:'all .14s'}}
+              onMouseEnter={e=>{e.currentTarget.style.background=acc;e.currentTarget.style.color='white';e.currentTarget.style.borderColor=acc;}}
+              onMouseLeave={e=>{e.currentTarget.style.background='var(--paper)';e.currentTarget.style.color='var(--ink-mid)';e.currentTarget.style.borderColor='var(--border)';}}>✓ Done</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+  return(
+    <div style={{flex:1,overflow:'auto',padding:'24px 32px'}}>
+      <div style={{maxWidth:580,margin:'0 auto'}}>
+        <div style={{fontFamily:"'Lora',serif",fontSize:22,fontWeight:700,marginBottom:3}}>Follow-ups</div>
+        <div style={{fontSize:13,color:'var(--ink-light)',marginBottom:26}}>Stay warm with the people who matter</div>
+        <Sec title="Overdue" items={over} badge={over.length?{bg:'#FDECEA',color:'#C44F3A',label:`${over.length} overdue`}:null}/>
+        <Sec title="Upcoming" items={coming}/>
+      </div>
+    </div>
+  );
+};
+
+
+/* ── SPEED DIAL FAB ─── */
+const SpeedDial = ({acc, onAddContact, onAddActivity, isMobile}) => {
+  const [open, setOpen] = useState(false);
+  const bottom = isMobile ? 76 : 24;
+  if(!isMobile) return(
+    <div style={{position:'fixed',right:20,bottom:bottom,zIndex:200}}>
+      <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:8}}>
+        {open && <>
+          <div style={{display:'flex',alignItems:'center',gap:8,animation:'fadeUp .15s ease'}}>
+            <span style={{fontSize:12,fontWeight:600,color:'var(--ink-mid)',background:'white',padding:'4px 10px',borderRadius:20,boxShadow:'var(--sh-s)',whiteSpace:'nowrap'}}>Add Contact</span>
+            <button onClick={()=>{setOpen(false);onAddContact();}} style={{width:40,height:40,borderRadius:'50%',background:'white',border:'2px solid var(--border)',color:'var(--ink)',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',boxShadow:'var(--sh-s)'}}>👤</button>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:8,animation:'fadeUp .18s ease'}}>
+            <span style={{fontSize:12,fontWeight:600,color:'var(--ink-mid)',background:'white',padding:'4px 10px',borderRadius:20,boxShadow:'var(--sh-s)',whiteSpace:'nowrap'}}>Log Activity</span>
+            <button onClick={()=>{setOpen(false);onAddActivity();}} style={{width:40,height:40,borderRadius:'50%',background:'white',border:'2px solid var(--border)',color:'var(--ink)',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',boxShadow:'var(--sh-s)'}}>✍️</button>
+          </div>
+        </>}
+        <button onClick={()=>setOpen(p=>!p)} style={{width:52,height:52,borderRadius:'50%',background:acc,border:'none',color:'white',fontSize:24,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',boxShadow:'0 4px 20px rgba(0,0,0,.22)',transform:open?'rotate(45deg)':'none',transition:'transform .2s ease'}}>+</button>
+      </div>
+      {open && <div onClick={()=>setOpen(false)} style={{position:'fixed',inset:0,zIndex:-1}}/>}
+    </div>
+  );
+  return(
+    <div style={{position:'fixed',right:16,bottom:bottom,zIndex:200}}>
+      <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:10}}>
+        {open && <>
+          <div style={{display:'flex',alignItems:'center',gap:8,animation:'slideUp .15s ease'}}>
+            <span style={{fontSize:11.5,fontWeight:600,color:'var(--ink-mid)',background:'white',padding:'5px 11px',borderRadius:20,boxShadow:'var(--sh-s)',whiteSpace:'nowrap'}}>Add Contact</span>
+            <button onClick={()=>{setOpen(false);onAddContact();}} style={{width:44,height:44,borderRadius:'50%',background:'white',border:'none',color:'var(--ink)',fontSize:20,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',boxShadow:'0 4px 16px rgba(0,0,0,.18)'}}>👤</button>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:8,animation:'slideUp .18s ease'}}>
+            <span style={{fontSize:11.5,fontWeight:600,color:'var(--ink-mid)',background:'white',padding:'5px 11px',borderRadius:20,boxShadow:'var(--sh-s)',whiteSpace:'nowrap'}}>Log Activity</span>
+            <button onClick={()=>{setOpen(false);onAddActivity();}} style={{width:44,height:44,borderRadius:'50%',background:'white',border:'none',color:'var(--ink)',fontSize:20,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',boxShadow:'0 4px 16px rgba(0,0,0,.18)'}}>✍️</button>
+          </div>
+        </>}
+        <button onClick={()=>setOpen(p=>!p)} style={{width:52,height:52,borderRadius:'50%',background:acc,border:'none',color:'white',fontSize:26,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',boxShadow:'0 4px 20px rgba(0,0,0,.24)',transform:open?'rotate(45deg)':'none',transition:'transform .22s ease',lineHeight:1}}>+</button>
+      </div>
+      {open && <div onClick={()=>setOpen(false)} style={{position:'fixed',inset:0,zIndex:-1}}/>}
+    </div>
+  );
+};
+
+/* ── HOME / WEEKLY DIGEST VIEW ─── */
+const HomeView = ({contacts, onSelect, onNav, acc, isMobile}) => {
+  const hr = new Date().getHours();
+  const greet = hr<5?'Night owl 🦉':hr<12?'Good morning ☀️':hr<17?'Good afternoon 🌤':hr<21?'Good evening 🌙':'Good night 🌙';
+  const birthdays = contacts.filter(c=>c.birthday&&birthdayDaysAway(c.birthday)!==null&&birthdayDaysAway(c.birthday)<=7).sort((a,b)=>birthdayDaysAway(a.birthday)-birthdayDaysAway(b.birthday));
+  const overdue = contacts.filter(isDue).sort((a,b)=>new Date(a.nextFollowUp)-new Date(b.nextFollowUp));
+  const overdueIds = new Set(overdue.map(x=>x.id));
+  const cold = contacts.filter(c=>!overdueIds.has(c.id)&&c.strength<0.3&&c.lastContact&&Math.floor((TODAY-new Date(c.lastContact))/864e5)>45).sort((a,b)=>a.strength-b.strength);
+  const thriving = contacts.filter(c=>c.strength>=0.8).length;
+  const allGood = overdue.length===0&&birthdays.length===0&&cold.length===0;
+  const SectionWrap = ({title,accent,onMore,children}) => (
+    <div style={{marginBottom:22}}>
+      <div style={{fontSize:12,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:accent||'var(--ink-light)',marginBottom:10,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <span style={{whiteSpace:'nowrap'}}>{title}</span>
+        {onMore&&<span onClick={onMore} style={{fontSize:12,fontWeight:600,color:acc,cursor:'pointer'}}>See all →</span>}
+      </div>
+      <div style={{background:'white',borderRadius:12,overflow:'hidden',border:'1px solid var(--border)',boxShadow:'var(--sh-s)'}}>{children}</div>
+    </div>
+  );
+  const PersonRow = ({contact,right,isLast}) => (
+    <div onClick={()=>onSelect(contact)} style={{display:'flex',alignItems:'center',gap:12,padding:'13px 16px',borderBottom:isLast?'none':'1px solid var(--border)',cursor:'pointer',transition:'background .13s'}}
+      onMouseEnter={e=>e.currentTarget.style.background='var(--paper)'} onMouseLeave={e=>e.currentTarget.style.background='white'}>
+      <Avi contact={contact} size={36} ring={false}/>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:14,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{contact.name}</div>
+        <div style={{fontSize:12,color:'var(--ink-light)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{contact.role}{contact.company?' · '+contact.company:''}</div>
+      </div>
+      <div style={{flexShrink:0}}>{right}</div>
+    </div>
+  );
+  return(
+    <div style={{flex:1,overflow:'auto'}}>
+      <div style={{padding:'28px 24px 22px',background:'var(--paper)',borderBottom:'1px solid var(--border)'}}>
+        <div style={{fontFamily:"'Lora',serif",fontSize:isMobile?21:26,fontWeight:700,marginBottom:5}}>{greet}</div>
+        <div style={{fontSize:13.5,color:'var(--ink-light)',fontStyle:'italic',fontFamily:"'Lora',serif"}}>Here's your week</div>
+      </div>
+      <div style={{padding:'22px 26px',maxWidth:820,margin:'0 auto'}}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:26}}>
+          {[{label:'Total',value:contacts.length,bg:'white',color:'var(--ink)'},{label:'Overdue',value:overdue.length,bg:overdue.length?'#FDECEA':'#EAF3EC',color:overdue.length?'#C44F3A':'#5A8A6A'},{label:'Thriving',value:thriving,bg:'#EAF3EC',color:'#5A8A6A'}].map(s=>(
+            <div key={s.label} style={{background:s.bg,borderRadius:10,padding:'14px 10px 12px',border:'1px solid var(--border)',textAlign:'center'}}>
+              <div style={{fontSize:28,fontWeight:700,color:s.color,lineHeight:1,marginBottom:5,fontFamily:"'Lora',serif"}}>{s.value}</div>
+              <div style={{fontSize:11,fontWeight:600,color:'var(--ink-light)',textTransform:'uppercase',letterSpacing:'.07em'}}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+        {birthdays.length>0&&(
+          <SectionWrap title="🎂 Birthdays this week" accent="#9B3F8A">
+            {birthdays.map((c,i)=><PersonRow key={c.id} contact={c} isLast={i===birthdays.length-1} right={<span style={{fontSize:11,fontWeight:600,color:'#9B3F8A',background:'#FDF0FB',padding:'3px 8px',borderRadius:12,border:'1px solid #E8C4E0',whiteSpace:'nowrap'}}>{birthdayDaysAway(c.birthday)===0?'🎉 Today!':birthdayDaysAway(c.birthday)===1?'Tomorrow':'in '+birthdayDaysAway(c.birthday)+'d'}</span>}/>)}
+          </SectionWrap>
+        )}
+        {overdue.length>0&&(
+          <SectionWrap title="⏰ Follow-ups due" accent="#C44F3A" onMore={overdue.length>3?()=>onNav('reminders'):null}>
+            {overdue.slice(0,3).map((c,i)=><PersonRow key={c.id} contact={c} isLast={i===Math.min(overdue.length,3)-1} right={<DueBadge contact={c}/>}/>)}
+          </SectionWrap>
+        )}
+        {cold.length>0&&(
+          <SectionWrap title="🌵 Going cold" accent="#C49B3A">
+            {cold.slice(0,3).map((c,i)=><PersonRow key={c.id} contact={c} isLast={i===Math.min(cold.length,3)-1} right={<span style={{fontSize:11,color:'#C49B3A',fontWeight:600,background:'#FDF6E3',padding:'3px 8px',borderRadius:12,border:'1px solid #F0DFA0',whiteSpace:'nowrap'}}>{Math.floor((TODAY-new Date(c.lastContact))/864e5)+'d ago'}</span>}/>)}
+          </SectionWrap>
+        )}
+        {allGood&&(
+          <div style={{textAlign:'center',padding:'60px 20px',color:'var(--ink-light)'}}>
+            <div style={{fontSize:44,marginBottom:16}}>🌸</div>
+            <div style={{fontFamily:"'Lora',serif",fontSize:20,fontWeight:600,marginBottom:8,color:'var(--ink)'}}>All caught up</div>
+            <div style={{fontSize:13.5,lineHeight:1.7,color:'var(--ink-light)',fontStyle:'italic',fontFamily:"'Lora',serif"}}>Your network is in good shape.</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/* ── MOBILE BOTTOM NAV ─── */
+const BottomNav = ({view, onChange, contacts, acc}) => {
+  const items = [
+    {id:'home',icon:'❖',label:'Home'},
+    {id:'contacts',icon:'◉',label:'Contacts'},
+    {id:'reminders',icon:'◎',label:'Follow-ups',badge:contacts.filter(isDue).length},
+    {id:'river',icon:'◈',label:'Activity'},
+  ];
+  return(
+    <div style={{display:'flex',borderTop:'1px solid var(--border)',background:'var(--paper)',flexShrink:0,paddingBottom:'env(safe-area-inset-bottom)'}}>
+      {items.map(n=>(
+        <div key={n.id} onClick={()=>onChange(n.id)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',padding:'8px 0 6px',cursor:'pointer',color:view===n.id?acc:'var(--ink-light)',transition:'color .14s',position:'relative'}}>
+          <span style={{fontSize:18,lineHeight:1,marginBottom:3}}>{n.icon}</span>
+          <span style={{fontSize:10,fontWeight:view===n.id?600:400}}>{n.label}</span>
+          {n.badge>0 && <span style={{position:'absolute',top:5,right:'calc(50% - 15px)',width:16,height:16,borderRadius:'50%',background:'#C44F3A',color:'white',fontSize:9,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center'}}>{n.badge}</span>}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+/* ── APP ─── */
+const App = () => {
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const [contacts, setContacts] = useState([]);
+  const [dbStatus, setDbStatus] = useState('loading');
+  const [setupDismissed, setSetupDismissed] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [nav, setNav] = useState('home');
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 700);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showActivityModal, setShowActivityModal] = useState(false);
+
+  // Load contacts from Supabase
+  useEffect(() => { loadContacts(); }, []);
+  const loadContacts = async () => {
+    setDbStatus('loading');
+    try {
+      const { data, error } = await window.__sb
+        .from('contacts')
+        .select('*, interactions(*)')
+        .order('created_at', { ascending: false });
+      if (error) {
+        setDbStatus(error.code === '42P01' ? 'setup' : 'offline');
+        setContacts(CONTACTS);
+        return;
+      }
+      setContacts(data.length > 0 ? data.map(dbToContact) : CONTACTS);
+      setDbStatus('connected');
+    } catch(e) {
+      setDbStatus('offline');
+      setContacts(CONTACTS);
+    }
+  };
+
+  useEffect(()=>{
+    const fn=()=>setIsMobile(window.innerWidth<700);
+    window.addEventListener('resize',fn);
+    return()=>window.removeEventListener('resize',fn);
+  },[]);
+
+  const theme = ACCENT_THEMES[t.accentColor] || ACCENT_THEMES['#D97757'];
+  const acc = theme.acc;
+
+  useEffect(()=>{
+    document.documentElement.style.setProperty('--acc', acc);
+    document.documentElement.style.setProperty('--acc-light', theme.accLight);
+    document.documentElement.style.setProperty('--acc-pale', theme.accPale);
+  },[acc, theme]);
+
+  const handleLog = async (cid, data) => {
+    const today = TODAY.toISOString().split('T')[0];
+    const contact = contacts.find(c => c.id === cid);
+    const newStrength = Math.min(1, (contact?.strength || 0.5) + .08);
+    const updatedC = {...contact, interactions:[{...data,date:today},...(contact?.interactions||[])], lastContact:today, strength:newStrength};
+    setContacts(prev => prev.map(c => c.id===cid ? updatedC : c));
+    if (selected?.id === cid) setSelected(updatedC);
+    if (dbStatus !== 'connected') return;
+    try {
+      await window.__sb.from('interactions').insert({contact_id:cid, date:today, type:data.type, note:data.note});
+      await window.__sb.from('contacts').update({last_contact:today, strength:newStrength}).eq('id', cid);
+    } catch(e) { console.warn('Log sync failed:', e); }
+  };
+  const handleSelect = c => { setSelected(c); if(c) setNav('contacts'); };
+  const handleNav = v => { setNav(v); setSelected(null); };
+  const handleAddContact = async c => {
+    setContacts(prev => [c, ...prev]);
+    if (dbStatus !== 'connected') return;
+    try {
+      const { data, error } = await window.__sb.from('contacts').insert(contactToDb(c)).select().single();
+      if (error) throw error;
+      if (c.interactions?.length) {
+        await window.__sb.from('interactions').insert(
+          c.interactions.map(i => ({contact_id:data.id, date:i.date, type:i.type, note:i.note}))
+        );
+      }
+      setContacts(prev => prev.map(x => x.id === c.id ? {...x, id:data.id} : x));
+    } catch(e) { console.warn('Save failed:', e); }
+  };
+
+  const renderMain = () => {
+    if(nav==='home') return <HomeView contacts={contacts} onSelect={handleSelect} onNav={handleNav} acc={acc} isMobile={isMobile}/>;
+    if(nav==='river') return <RiverView contacts={contacts} onSelect={handleSelect} acc={acc}/>;
+    if(nav==='reminders') return <RemindersView contacts={contacts} onSelect={handleSelect} onLog={handleLog} acc={acc}/>;
+    return <ContactsView contacts={contacts} selected={selected} onSelect={setSelected} viewMode={t.viewMode} acc={acc} onAddClick={()=>setShowAddModal(true)} dbStatus={setupDismissed?'connected':dbStatus} onDismissSetup={()=>setSetupDismissed(true)}/> ;
+  };
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',height:'100vh',overflow:'hidden'}}>
+      <div style={{display:'flex',flex:1,overflow:'hidden'}}>
+        {!isMobile && (
+          <Sidebar view={nav} onChange={handleNav} contacts={contacts} onSelect={handleSelect} acc={acc} collapsed={t.sidebarCollapsed} dbStatus={dbStatus} onLogActivity={()=>setShowActivityModal(true)}/>
+        )}
+        <div style={{flex:1,display:'flex',overflow:'hidden'}}>
+          <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>{renderMain()}</div>
+          {selected && !isMobile && (
+            <Detail contact={selected} onClose={()=>setSelected(null)} onLog={handleLog} acc={acc} isMobile={false}/>
+          )}
+        </div>
+      </div>
+      {!selected && !showAddModal && !showActivityModal && <SpeedDial acc={acc} onAddContact={()=>setShowAddModal(true)} onAddActivity={()=>setShowActivityModal(true)} isMobile={isMobile}/>}
+      {isMobile && <BottomNav view={nav} onChange={handleNav} contacts={contacts} acc={acc}/>}
+      {selected && isMobile && <Detail contact={selected} onClose={()=>setSelected(null)} onLog={handleLog} acc={acc} isMobile={true}/>}
+
+      {showAddModal && <AddContactModal acc={acc} onClose={()=>setShowAddModal(false)} onSave={handleAddContact}/>}
+      {showActivityModal && <AddActivityModal contacts={contacts} acc={acc} onClose={()=>setShowActivityModal(false)} onLog={handleLog}/>}
+      <TweaksPanel>
+        <TweakSection label="Accent color"/>
+        <TweakColor label="Theme" value={t.accentColor} options={ACCENT_OPTIONS} onChange={v=>setTweak('accentColor',v)}/>
+        <TweakSection label="Contact layout"/>
+        <TweakRadio label="View mode" value={t.viewMode} options={['grid','list']} onChange={v=>setTweak('viewMode',v)}/>
+        <TweakSection label="Sidebar"/>
+        <TweakToggle label="Collapse sidebar" value={t.sidebarCollapsed} onChange={v=>setTweak('sidebarCollapsed',v)}/>
+        <TweakSection label="Relationship rings"/>
+        <TweakToggle label="Show rings on avatars" value={t.showStrengthRings} onChange={v=>setTweak('showStrengthRings',v)}/>
+      </TweaksPanel>
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

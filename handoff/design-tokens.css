@@ -1,0 +1,207 @@
+/**
+ * Personal CRM Pro — Design Tokens
+ * =================================
+ * Import these CSS custom properties into your project's global stylesheet.
+ * All values extracted directly from the high-fidelity prototype.
+ *
+ * Font imports (add to your <head> or global CSS):
+ * @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&display=swap');
+ */
+
+:root {
+
+  /* ── BACKGROUNDS ───────────────────────────────────────────
+   * Three-layer warm paper system: page → surface → card
+   * cream  = full page background
+   * paper  = sidebar, modals footer, input backgrounds, section headers
+   * card   = contact cards, list rows on hover, info blocks
+   */
+  --crm-cream:   #FAF7F2;
+  --crm-paper:   #F0EBE3;
+  --crm-card:    #EDE8DF;
+  --crm-white:   #FFFFFF;
+
+  /* ── BORDERS ───────────────────────────────────────────── */
+  --crm-border:  #D8D0C4;
+
+  /* ── INK (text) ─────────────────────────────────────────
+   * Four ink tones from strong to barely-there
+   */
+  --crm-ink:       #2A2420;   /* primary text */
+  --crm-ink-mid:   #6B5040;   /* secondary text, labels */
+  --crm-ink-light: #8B7355;   /* tertiary text, placeholders */
+  --crm-ink-faint: #C4B89A;   /* section label caps, disabled */
+
+  /* ── ACCENT (Terracotta — default) ──────────────────────
+   * Three variants: full, light (for borders/tints), pale (for backgrounds)
+   * Swappable at runtime:
+   *   Cobalt: #3B6FD4 / #A8C0F0 / #EFF4FD
+   *   Plum:   #9B4F8E / #D9A8D4 / #F7EEF6
+   */
+  --crm-acc:       #D97757;
+  --crm-acc-light: #F2C4AE;
+  --crm-acc-pale:  #FBF0EB;
+
+  /* ── SEMANTIC COLOURS ───────────────────────────────────
+   * Used for relationship strength indicators and status
+   */
+  --crm-green:   #5A8A6A;   /* Thriving (strength ≥ 0.8) */
+  --crm-amber:   #C49B3A;   /* Active   (strength ≥ 0.5) */
+  --crm-terr:    #D97757;   /* Fading   (strength ≥ 0.25) — same as accent */
+  --crm-red:     #C44F3A;   /* Dormant  (strength < 0.25) */
+
+  /* ── RELATIONSHIP CHIP COLOURS ──────────────────────────
+   * Each relationship type has a bg + text pair
+   */
+  --crm-rel-friend-bg:       #FEF2EE;
+  --crm-rel-friend-text:     #C87553;
+  --crm-rel-colleague-bg:    #EFF4FD;
+  --crm-rel-colleague-text:  #3B6FD4;
+  --crm-rel-mentor-bg:       #F2EDFD;
+  --crm-rel-mentor-text:     #7C5AC2;
+  --crm-rel-investor-bg:     #EAF3EC;
+  --crm-rel-investor-text:   #2A8C5E;
+  --crm-rel-partner-bg:      #FDF6E3;
+  --crm-rel-partner-text:    #B08A20;
+
+  /* ── STATUS BADGE COLOURS ───────────────────────────────
+   * Overdue / Due today / Due soon
+   */
+  --crm-badge-overdue-bg:    #FDECEA;
+  --crm-badge-overdue-text:  #C44F3A;
+  --crm-badge-overdue-border:#FFCDD2;
+  --crm-badge-today-bg:      #FBF0EB;
+  --crm-badge-today-text:    #D97757;
+  --crm-badge-today-border:  #F2C4AE;
+  --crm-badge-soon-bg:       #FDF6E3;
+  --crm-badge-soon-text:     #C49B3A;
+  --crm-badge-soon-border:   #F0DFA0;
+
+  /* ── BIRTHDAY ────────────────────────────────────────── */
+  --crm-birthday-bg:         #FDF0FB;
+  --crm-birthday-text:       #9B3F8A;
+  --crm-birthday-border:     #E8C4E0;
+
+  /* ── TYPOGRAPHY ─────────────────────────────────────────
+   * Primary: DM Sans (body, UI labels, buttons)
+   * Display: Lora (contact names, headings, italic subtitles)
+   */
+  --crm-font-body:     'DM Sans', -apple-system, sans-serif;
+  --crm-font-display:  'Lora', Georgia, serif;
+
+  /* Font size scale */
+  --crm-text-xs:    10px;
+  --crm-text-sm:    11px;
+  --crm-text-base:  13px;
+  --crm-text-md:    14px;
+  --crm-text-lg:    16px;
+  --crm-text-xl:    19px;
+  --crm-text-2xl:   22px;
+  --crm-text-3xl:   26px;
+
+  /* Section label style */
+  --crm-label-size:    10.5px;
+  --crm-label-weight:  700;
+  --crm-label-tracking: 0.09em;
+
+  /* ── SPACING ─────────────────────────────────────────── */
+  --crm-space-1:   4px;
+  --crm-space-2:   8px;
+  --crm-space-3:  12px;
+  --crm-space-4:  16px;
+  --crm-space-5:  20px;
+  --crm-space-6:  24px;
+  --crm-space-8:  32px;
+
+  /* ── BORDER RADIUS ──────────────────────────────────────
+   * Cards: 12px, Modals: 16px, Inputs/buttons: 8px, Pills/chips: 20px
+   */
+  --crm-radius-sm:   6px;
+  --crm-radius-md:   8px;
+  --crm-radius-lg:   12px;
+  --crm-radius-xl:   16px;
+  --crm-radius-pill: 20px;
+  --crm-radius-full: 9999px;
+
+  /* ── SHADOWS ─────────────────────────────────────────────
+   * All warm-toned using rgba(42,36,32,...) — matches ink colour
+   * sh-s = cards, hover states
+   * sh-m = popovers, selected states
+   * sh-l = modals, overlays
+   */
+  --crm-sh-s: 0 1px 4px rgba(42,36,32,.08), 0 1px 2px rgba(42,36,32,.04);
+  --crm-sh-m: 0 4px 16px rgba(42,36,32,.10), 0 2px 4px rgba(42,36,32,.05);
+  --crm-sh-l: 0 16px 44px rgba(42,36,32,.14), 0 4px 10px rgba(42,36,32,.06);
+
+  /* ── LAYOUT ──────────────────────────────────────────── */
+  --crm-sidebar-width:     216px;
+  --crm-sidebar-collapsed: 52px;
+  --crm-detail-width:      360px;
+  --crm-mobile-breakpoint: 700px;
+  --crm-bottomnav-height:  58px;
+
+  /* ── TRANSITIONS ─────────────────────────────────────── */
+  --crm-transition-fast:   all 0.13s ease;
+  --crm-transition-base:   all 0.18s ease;
+  --crm-transition-slow:   all 0.22s ease;
+}
+
+
+/* ── AVATAR COLOUR PALETTE ───────────────────────────────
+ * 8 colours assigned to contacts based on name hash
+ * Usage: AVI_COLORS[nameCharSum % 8]
+ */
+:root {
+  --crm-avi-0: #C87553;
+  --crm-avi-1: #5A8A6A;
+  --crm-avi-2: #8B6BB5;
+  --crm-avi-3: #3B6FD4;
+  --crm-avi-4: #C49B3A;
+  --crm-avi-5: #E07A5F;
+  --crm-avi-6: #6B9E9E;
+  --crm-avi-7: #D97757;
+}
+
+
+/* ── BASE STYLES ─────────────────────────────────────────
+ * Apply to your root / global reset
+ */
+.crm-root {
+  font-family: var(--crm-font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--crm-ink);
+  background: var(--crm-cream);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── SCROLLBAR ───────────────────────────────────────────
+ * Thin, warm-toned scrollbar
+ */
+.crm-root ::-webkit-scrollbar       { width: 4px; height: 4px; }
+.crm-root ::-webkit-scrollbar-track { background: transparent; }
+.crm-root ::-webkit-scrollbar-thumb { background: var(--crm-border); border-radius: 2px; }
+
+
+/* ── ANIMATIONS ──────────────────────────────────────────
+ * Used for panel entrances and modal appears
+ */
+@keyframes crm-fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes crm-slideRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes crm-slideUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Usage:
+   Detail panel (desktop): animation: crm-slideRight 0.22s ease;
+   Detail panel (mobile):  animation: crm-slideUp 0.22s ease;
+   Modals:                 animation: crm-fadeUp 0.18s ease;
+*/

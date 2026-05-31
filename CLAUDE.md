@@ -10,12 +10,11 @@ A personal relationship management tool built for private use by Patrick Chung. 
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 18 (single `.jsx` file), Vite 5 |
-| Styling | CSS-in-JS via injected `<style>` tag, CSS variables, Google Fonts (Lora + DM Sans) |
-| Database | Supabase (PostgreSQL) — table `contacts`, column `data jsonb` |
-| AI | OpenAI `gpt-4o-mini` via REST (`/v1/chat/completions`) |
+| Frontend | React 18 (multi-file, Vite 5) |
+| Styling | `src/styles/globals.css`, CSS custom properties, Google Fonts (Lora + DM Sans) |
+| Database | Supabase (PostgreSQL) — normalized `contacts` + `interactions` tables |
+| AI | OpenAI `gpt-4o-mini` via Vercel serverless (`/api/ai`) |
 | Deployment | Vercel (production: `personal-crm-silk.vercel.app`) |
-| Node scripts | `scripts/process-import.mjs` — one-time contact enrichment |
 
 Environment variables (in `.env`, never committed):
 - `VITE_OPENAI_API_KEY`
@@ -28,85 +27,159 @@ Environment variables (in `.env`, never committed):
 
 ```
 /
-├── personal-crm.jsx          # Entire app — components, styles, logic in one file
-├── index.html                # Vite entry point
-├── vite.config.js            # Vite config with React plugin
-├── vercel.json               # SPA rewrite rule
-├── package.json              # Scripts: dev / build / preview / import
-├── .env                      # Secret keys (gitignored)
-├── crm_contacts_final.json   # Original raw export from old CRM (source of truth for import)
+├── index.html                    # Vite entry point
+├── vite.config.js
+├── vercel.json                   # SPA rewrite + /api serverless routes
+├── package.json
+├── .env                          # Secret keys (gitignored)
+├── api/
+│   ├── ai.js                     # Serverless: OpenAI proxy (AI suggestions + meeting prep)
+│   └── notify.js                 # Serverless: birthday/follow-up email notifications
 ├── src/
-│   ├── main.jsx              # React root render
-│   ├── supabase.js           # Supabase client (reads VITE_ env vars)
-│   └── imported-contacts.json  # AI-enriched contacts seeded into Supabase
+│   ├── main.jsx                  # React root render
+│   ├── App.jsx                   # Root state, auth, CRUD, routing between views
+│   ├── supabase.js               # Supabase client
+│   ├── lib/utils.js              # Shared helpers: computeStrength, cadence, date utils, INTERACTION_TYPES
+│   ├── styles/globals.css        # All CSS — design tokens, components, views
+│   ├── components/
+│   │   ├── Avatar.jsx            # Avatar + AvatarSimple (SVG strength ring)
+│   │   ├── Sidebar.jsx           # Left nav, today widget, settings
+│   │   ├── BottomNav.jsx         # Mobile bottom nav
+│   │   ├── DueBadge.jsx          # Overdue / due-date badge
+│   │   ├── RelChip.jsx           # Relationship tag chip
+│   │   ├── SpeedDial.jsx         # FAB speed dial (add contact / log activity)
+│   │   └── LoginScreen.jsx       # Magic-link auth screen
+│   ├── views/
+│   │   ├── HomeView.jsx          # Dashboard: stat cards, birthdays, follow-ups, going cold
+│   │   ├── ContactsView.jsx      # Searchable/filterable contact grid or list
+│   │   ├── ActivityView.jsx      # Global activity feed
+│   │   ├── RemindersView.jsx     # Overdue + upcoming follow-ups
+│   │   └── StatsView.jsx         # Monthly bar chart, top contacts, type distribution
+│   └── panels/
+│       ├── ContactDetail.jsx     # Slide-in detail: edit, interactions, meeting prep AI
+│       ├── QuickLog.jsx          # Log interaction + follow-up strip
+│       ├── AddContactModal.jsx   # New contact form
+│       └── AddActivityModal.jsx  # Global "log activity" with contact picker
 └── scripts/
-    └── process-import.mjs    # Node script: reads crm_contacts_final.json → enriches with OpenAI → writes imported-contacts.json
+    └── migrate.mjs               # One-time migration: contacts_legacy (jsonb) → normalized tables
 ```
 
-### Component hierarchy (all in `personal-crm.jsx`)
+### Component hierarchy
 
 ```
-App
-├── Dashboard          — summary cards, follow-ups, birthdays, reconnect list (collapsible sections)
-├── ContactsList       — filterable/searchable grid, multi-select category filter
-└── ContactProfile     — detail view, edit panel, update log, AI follow-up suggestions
+App  (auth, contacts[], interactions via join)
+├── Sidebar
+├── HomeView          — needs-attention count, birthdays, follow-ups due, going cold
+├── ContactsView      — search + relationship filter, grid/list toggle, select mode
+├── ActivityView      — flat interaction log across all contacts
+├── RemindersView     — overdue + upcoming next_follow_up
+├── StatsView         — monthly chart, top contacts (90d), by-type distribution
+└── ContactDetail     — edit form, quick log, interaction history, meeting prep AI
+    └── QuickLog      — log interaction + inline follow-up strip after save
 ```
 
 ---
 
-## Contact Data Schema
+## Database Schema (normalized, current)
 
-Each contact stored in Supabase as `{ id, data: <json> }` where `data` contains:
+```sql
+-- contacts table
+create table contacts (
+  id            uuid primary key default gen_random_uuid(),
+  name          text not null,
+  role          text,
+  company       text,
+  location      text,
+  email         text,
+  phone         text,
+  birthday      text,           -- "MM-DD" (year-less)
+  bio           text,
+  notes         text,
+  photo         text,           -- Supabase Storage public URL
+  tags          text[],
+  relationship  text[],         -- ["Friend","Family","Colleague",…]
+  cadence       int,            -- override in days; null = computed from relationship[]
+  last_contact  date,           -- auto-updated when interaction is added
+  next_follow_up date,
+  follow_up_note text,
+  social        jsonb,          -- { linkedin, twitter, instagram }
+  created_at    timestamptz default now()
+);
+
+-- interactions table
+create table interactions (
+  id          uuid primary key default gen_random_uuid(),
+  contact_id  uuid references contacts(id) on delete cascade,
+  date        date not null,
+  type        text,             -- see INTERACTION_TYPES in utils.js
+  note        text,
+  created_at  timestamptz default now()
+);
+```
+
+Auth: Supabase magic-link email. RLS enabled on both tables (`auth.uid() is not null`).
+
+Contacts are loaded with `supabase.from("contacts").select("*, interactions(*)")` — interactions are embedded as an array.
+
+**Sync pattern**: per-contact debounced write (600ms). `syncContact(contact)` strips the `interactions` array before upserting to `contacts`. Interactions are written separately via `addInteraction` / `deleteInteraction`.
+
+**Supabase Storage**: `avatars` bucket (public). Path: `avatars/<contact-id>`. Must be created manually in the Supabase Dashboard.
+
+---
+
+## Contact Data Shape (in-memory)
+
+After load, each contact object is:
 
 ```js
 {
-  id, name,
-  categories,                // string[]  — "family" | "friend" | "colleague" | "business" (multi-select)
-  category,                  // legacy: string (old records only — use getCategories() helper, never read directly)
-  role, company, location,
-  phone, email,
-  linkedin, instagram,       // social handles
-  birthday,                  // ISO string or "--MM-DD" (year-less) or null
-  strength,                  // 1–5
-  strengthOverride,          // number | null — manual override bypasses auto-compute
-  notes,                     // freeform string (legacy; new notes go in updates[])
-  bio,                       // freeform string
-  photo,                     // Supabase Storage public URL or null
-  tags,                      // string[]
-  updates,                   // [{ date, text }]  — update log, capped at 50, newest first
-  lastContact,               // ISO date string or null — auto-set from updates
-  lastModified,              // ISO datetime string — set on every updateContact() / addUpdate() call
-  followUp: { date, note },  // or null
-  importantDates,            // [{ name, date }] — arbitrary recurring dates
+  id, name, role, company, location, email, phone,
+  birthday,         // "MM-DD" or null
+  bio, notes, photo,
+  tags,             // string[]
+  relationship,     // string[] — "Friend" | "Family" | "Colleague" | "School" | "Network" | "Mentor" | "Collaborator"
+  cadence,          // int (days) | null — if null, computeCadence(relationship) is used
+  last_contact,     // "YYYY-MM-DD" | null — updated automatically when interaction added
+  next_follow_up,   // "YYYY-MM-DD" | null
+  follow_up_note,   // string | null
+  social,           // { linkedin, twitter, instagram }
+  interactions,     // [{ id, contact_id, date, type, note, created_at }] — from join
+  strength,         // float 0–1 — added by contactsEnriched = contacts.map(c => ({...c, strength: computeStrength(c)}))
 }
 ```
-
-**`getCategories(contact)` helper** — always use this instead of reading `category`/`categories` directly:
-```js
-// handles both legacy {category: string} and new {categories: string[]}
-function getCategories(contact) {
-  if (contact.categories?.length) return contact.categories;
-  if (contact.category) return [contact.category];
-  return ["friend"];
-}
-```
-
-New contacts write `categories: string[]`. Old contacts in Supabase still have `category: string` — `getCategories()` normalizes both.
-
-Birthday normalization: `--MM-DD` is converted to `2000-MM-DD` for date math, but displayed without year.
 
 ---
 
 ## Cadence / Drift Logic
 
 ```js
-CATEGORY_CADENCE = { family: 30, friend: 90, colleague: 75, business: 60 }  // days
-STRENGTH_CADENCE = { 5: -15, 4: -10, 3: 0, 2: +10, 1: +20 }               // day adjustment
+RELATIONSHIP_CADENCE = {
+  Family: 30, Friend: 60, School: 90,
+  Colleague: 75, Network: 90, Mentor: 45, Collaborator: 60
+}  // days
+
+computeCadence(relationship[]) → Math.min(...cadences)  // strictest wins
+computeStrength(contact)       → max(0, 1 - daysSince / cadence)
 ```
 
-Drift threshold = `Math.min(...categories.map(cat => CATEGORY_CADENCE[cat])) + STRENGTH_CADENCE[strength]`. When a contact has multiple categories, the **strictest** (smallest) cadence wins.
+`strength` is a float:
+- `>= 0.8` → Thriving (green)
+- `>= 0.5` → Active (amber)
+- `>= 0.25` → Fading (orange)
+- `< 0.25` → Dormant (red)
 
-A contact is "drifting" when `daysSince > threshold`. Overdue by >60d = high urgency.
+"Going cold" threshold in HomeView: `strength < 0.3 && daysSince > 45`.
+"Needs attention" count (stat card): overdue follow-up OR going cold — deduplicated.
+
+---
+
+## AI Features
+
+**`/api/ai`** (Vercel serverless, proxies OpenAI `gpt-4o-mini`):
+- `action: "suggest"` — given contact context, returns suggested follow-up message
+- `action: "prep"` — meeting prep brief: returns `{ lastMeeting, background, topics[] }`
+
+Called client-side with `fetch("/api/ai", { method: "POST", body: JSON.stringify({action, contact, interactions}) })`.
 
 ---
 
@@ -127,8 +200,7 @@ A contact is "drifting" when `daysSince > threshold`. Overdue by >60d = high urg
 - **Never commit `crm_contacts_final.json`** to a public repo — contains real personal contact data.
 - **Never add `node_modules/` or `dist/`** to version control.
 - **Do not introduce new dependencies** without discussing first — keep the stack minimal.
-- **Do not split `personal-crm.jsx`** into multiple files unless explicitly requested — single-file is an intentional design choice for simplicity.
-- **Do not add sample/mock data** back into the app — real contacts come from Supabase.
+- **Do not add sample/mock data** — real contacts come from Supabase.
 - **Do not expose API keys** in client-side code outside of Vite `VITE_` env var pattern.
 
 ---
@@ -138,24 +210,5 @@ A contact is "drifting" when `daysSince > threshold`. Overdue by >60d = high urg
 ```bash
 npm run dev          # local dev server (localhost:5173)
 npm run build        # production build → dist/
-npm run import       # AI-enrich crm_contacts_final.json → src/imported-contacts.json
 vercel --prod        # deploy to production
 ```
-
----
-
-## Supabase Setup (reference)
-
-Table DDL:
-```sql
-create table contacts (
-  id text primary key,
-  data jsonb
-);
-alter table contacts enable row level security;
-create policy "allow all" on contacts for all using (true) with check (true);
-```
-
-**Sync pattern**: per-contact debounced write (600ms). `syncContact(contact)` clears the previous timer for that contact ID and schedules a single `supabase.upsert`. Guarded by `loadedRef.current` on initial load. Timer map lives in `syncTimers` ref.
-
-**Supabase Storage**: `avatars` bucket (public) stores contact photos. Must be created manually in the Supabase Dashboard — the anon key does not have permission to create buckets via API. Path pattern: `avatars/<contact-id>`. `onUpload` callback writes the public URL to `contact.photo`.
