@@ -368,7 +368,12 @@ export default function App() {
     dlFile(JSON.stringify(list, null, 2), `crm-${label}-${todayISO()}.json`, "application/json");
   }
   function exportCSV(list, label) {
-    const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const esc = v => {
+      let s = String(v ?? "").replace(/"/g, '""');
+      // Prevent spreadsheet formula injection
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+      return `"${s}"`;
+    };
     const hdrs = ["name","relationship","role","company","location","phone","email","birthday","lastContact","nextFollowUp","followUpNote","bio","notes","tags","linkedin","twitter","instagram"];
     const rows = list.map(c => [
       c.name, (c.relationship||[]).join(";"), c.role, c.company, c.location,
@@ -379,20 +384,22 @@ export default function App() {
     dlFile([hdrs.map(esc).join(","), ...rows].join("\n"), `crm-${label}-${todayISO()}.csv`, "text/csv;charset=utf-8");
   }
   function exportVCard(list, label) {
+    // RFC 6350: escape backslash, newline, comma, semicolon in text values
+    const vesc = v => String(v ?? "").replace(/\\/g, "\\\\").replace(/\r?\n/g, "\\n").replace(/([,;])/g, "\\$1");
     const lines = list.flatMap(c => {
-      const v = ["BEGIN:VCARD","VERSION:3.0",`FN:${c.name||""}`,`N:${c.name||""};;;;`];
-      if (c.company) v.push(`ORG:${c.company}`);
-      if (c.role) v.push(`TITLE:${c.role}`);
-      if (c.phone) v.push(`TEL:${c.phone}`);
-      if (c.email) v.push(`EMAIL:${c.email}`);
+      const v = ["BEGIN:VCARD","VERSION:3.0",`FN:${vesc(c.name)}`,`N:${vesc(c.name)};;;;`];
+      if (c.company) v.push(`ORG:${vesc(c.company)}`);
+      if (c.role) v.push(`TITLE:${vesc(c.role)}`);
+      if (c.phone) v.push(`TEL:${vesc(c.phone)}`);
+      if (c.email) v.push(`EMAIL:${vesc(c.email)}`);
       if (c.birthday) {
         const [mm,dd] = c.birthday.split("-");
         v.push(`BDAY:1604-${mm}-${dd}`);
       }
-      if (c.social?.linkedin) v.push(`URL:https://linkedin.com/in/${c.social.linkedin}`);
-      if (c.relationship?.length) v.push(`CATEGORIES:${c.relationship.join(",")}`);
+      if (c.social?.linkedin) v.push(`URL:https://linkedin.com/in/${vesc(c.social.linkedin)}`);
+      if (c.relationship?.length) v.push(`CATEGORIES:${c.relationship.map(vesc).join(",")}`);
       const note = [c.bio, c.location ? `Location: ${c.location}` : null].filter(Boolean);
-      if (note.length) v.push(`NOTE:${note.join("\\n")}`);
+      if (note.length) v.push(`NOTE:${note.map(vesc).join("\\n")}`);
       v.push("END:VCARD");
       return v;
     });
