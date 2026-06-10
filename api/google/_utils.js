@@ -7,6 +7,8 @@ export function getSupabaseAdmin() {
   );
 }
 
+const OWNER_EMAIL = process.env.OWNER_EMAIL || "patrick.chung2003@gmail.com";
+
 export async function verifyAuth(req) {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return null;
@@ -15,7 +17,8 @@ export async function verifyAuth(req) {
     process.env.VITE_SUPABASE_ANON_KEY
   );
   const { data: { user } } = await client.auth.getUser(token);
-  return user ?? null;
+  if (!user || user.email?.toLowerCase() !== OWNER_EMAIL.toLowerCase()) return null;
+  return user;
 }
 
 export async function getValidAccessToken() {

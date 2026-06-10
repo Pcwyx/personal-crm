@@ -9,7 +9,7 @@ export default function LoginScreen() {
   async function handleSend(e) {
     e.preventDefault();
     setSending(true);
-    await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin } });
+    await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin, shouldCreateUser: false } });
     setSent(true);
     setSending(false);
   }
