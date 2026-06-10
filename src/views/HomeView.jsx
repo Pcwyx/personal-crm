@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { birthdayDaysUntil, formatBirthday, TIER_CADENCE } from "../lib/utils.js";
+import { birthdayDaysUntil, formatBirthday, TIER_CADENCE, daysSince } from "../lib/utils.js";
 import Avatar, { AvatarSimple } from "../components/Avatar.jsx";
 import DueBadge from "../components/DueBadge.jsx";
 
@@ -48,16 +48,10 @@ export default function HomeView({ contacts, onOpenDetail, today, needsAttention
     .filter(c => {
       if (overdueFollowUpIds.has(c.id)) return false;
       const threshold = TIER_CADENCE[c.tier] || 90;
-      const ds = c.last_contact
-        ? Math.floor((Date.now() - new Date(c.last_contact)) / 86400000)
-        : null;
+      const ds = daysSince(c.last_contact);
       return ds !== null && ds > threshold;
     })
-    .sort((a, b) => {
-      const da = a.last_contact ? Math.floor((Date.now() - new Date(a.last_contact)) / 86400000) : 9999;
-      const db = b.last_contact ? Math.floor((Date.now() - new Date(b.last_contact)) / 86400000) : 9999;
-      return db - da;
-    });
+    .sort((a, b) => (daysSince(b.last_contact) ?? 9999) - (daysSince(a.last_contact) ?? 9999));
 
   const allEmpty = !birthdays.length && !followUps.length && !goingCold.length;
 
@@ -143,9 +137,7 @@ export default function HomeView({ contacts, onOpenDetail, today, needsAttention
               label="🌵 Going cold"
               items={goingCold}
               renderRow={c => {
-                const ds = c.last_contact
-                  ? Math.floor((Date.now() - new Date(c.last_contact)) / 86400000)
-                  : null;
+                const ds = daysSince(c.last_contact);
                 return (
                   <div key={c.id} className="section-card-row" onClick={() => onOpenDetail(c.id)}>
                     <Avatar contact={c} size={36} />

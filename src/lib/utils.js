@@ -55,7 +55,7 @@ export function computeCadence(relationships) {
 export function computeStrength(contact) {
   if (!contact.last_contact) return 0.5;
   const cadence = TIER_CADENCE[contact.tier] || 90;
-  const ds = Math.floor((Date.now() - new Date(contact.last_contact)) / 86400000);
+  const ds = daysSince(contact.last_contact);
   return Math.max(0, Math.min(1, 1 - ds / cadence));
 }
 

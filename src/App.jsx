@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase, authFetch } from "./supabase.js";
-import { computeStrength, TIER_CADENCE, birthdayDaysUntil, todayISO } from "./lib/utils.js";
+import { computeStrength, TIER_CADENCE, birthdayDaysUntil, todayISO, daysSince } from "./lib/utils.js";
 import Sidebar from "./components/Sidebar.jsx";
 import BottomNav from "./components/BottomNav.jsx";
 import SpeedDial from "./components/SpeedDial.jsx";
@@ -198,18 +198,17 @@ export default function App() {
 
   // ── CONTACT CRUD ─────────────────────────────────────────────────────────────
   function updateContact(id, patch) {
-    setContacts(prev => prev.map(c => {
-      if (c.id !== id) return c;
-      const updated = { ...c, ...patch };
-      syncContact(updated);
-      if ("next_follow_up" in patch && gcalConnected) {
-        syncFollowUpCalendar(c, patch.next_follow_up ?? null, patch.follow_up_note ?? c.follow_up_note);
-      }
-      if ("birthday" in patch && gcalConnected) {
-        syncBirthdayCalendar(c, patch.birthday ?? null);
-      }
-      return updated;
-    }));
+    const existing = contacts.find(c => c.id === id);
+    if (!existing) return;
+    const updated = { ...existing, ...patch, updated_at: new Date().toISOString() };
+    setContacts(prev => prev.map(c => (c.id === id ? updated : c)));
+    syncContact(updated);
+    if ("next_follow_up" in patch && gcalConnected) {
+      syncFollowUpCalendar(existing, patch.next_follow_up ?? null, patch.follow_up_note ?? existing.follow_up_note);
+    }
+    if ("birthday" in patch && gcalConnected) {
+      syncBirthdayCalendar(existing, patch.birthday ?? null);
+    }
   }
 
   async function addContact(data) {
@@ -247,13 +246,45 @@ export default function App() {
         });
       }
     }
-    await supabase.from("contacts").delete().eq("id", id);
+    const { error } = await supabase.from("contacts").delete().eq("id", id);
+    if (error) {
+      setGlobalError("Failed to delete contact. Please try again.");
+      setTimeout(() => setGlobalError(null), 4000);
+      return;
+    }
     setContacts(prev => prev.filter(c => c.id !== id));
     if (detailId === id) setDetailId(null);
   }
 
   async function bulkDelete() {
-    for (const id of selectedIds) await deleteContact(id);
+    const ids = [...selectedIds];
+    if (gcalConnected) {
+      for (const id of ids) {
+        const contact = contacts.find(c => c.id === id);
+        if (contact?.gcal_birthday_event_id) {
+          authFetch("/api/google/birthday", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ event_id: contact.gcal_birthday_event_id }),
+          });
+        }
+        if (contact?.gcal_followup_event_id) {
+          authFetch("/api/google/followup", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ event_id: contact.gcal_followup_event_id }),
+          });
+        }
+      }
+    }
+    const { error } = await supabase.from("contacts").delete().in("id", ids);
+    if (error) {
+      setGlobalError("Failed to delete contacts. Please try again.");
+      setTimeout(() => setGlobalError(null), 4000);
+    } else {
+      setContacts(prev => prev.filter(c => !selectedIds.has(c.id)));
+      if (detailId && selectedIds.has(detailId)) setDetailId(null);
+    }
     setShowBulkDeleteConfirm(false);
     setSelectMode(false);
     setSelectedIds(new Set());
@@ -290,17 +321,25 @@ export default function App() {
       c.id !== contactId ? c : { ...c, interactions: ints, last_contact: newLast }
     ));
 
-    // Cancel any previous undo toast
-    if (undoToast) clearTimeout(undoToast.timerId);
+    // Flush any previous pending delete immediately so its DB write is never lost
+    if (undoToast) {
+      clearTimeout(undoToast.timerId);
+      undoToast.commit();
+    }
 
-    const timerId = setTimeout(async () => {
+    const commit = async () => {
       await supabase.from("interactions").delete().eq("id", interactionId);
       await supabase.from("contacts").update({ last_contact: newLast }).eq("id", contactId);
+    };
+
+    const timerId = setTimeout(async () => {
+      await commit();
       setUndoToast(null);
     }, 5000);
 
     setUndoToast({
       timerId,
+      commit,
       onUndo: () => {
         clearTimeout(timerId);
         setContacts(prev => prev.map(c => c.id === contactId ? contactBefore : c));
@@ -372,7 +411,7 @@ export default function App() {
   const needsAttentionCount = overdueFollowUpCount + contacts.filter(c => {
     if (overdueIds.has(c.id)) return false;
     const threshold = TIER_CADENCE[c.tier] || 90;
-    const ds = c.last_contact ? Math.floor((Date.now() - new Date(c.last_contact)) / 86400000) : null;
+    const ds = daysSince(c.last_contact);
     return ds !== null && ds > threshold;
   }).length;
   const detailContact = contacts.find(c => c.id === detailId) || null;
