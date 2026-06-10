@@ -84,6 +84,10 @@ export function daysUntilDate(dateStr) {
   return Math.ceil((new Date(dateStr + "T00:00:00") - today) / 86400000);
 }
 
+function isLeapYear(y) {
+  return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+}
+
 // birthday: "MM-DD"
 export function birthdayDaysUntil(birthday) {
   if (!birthday) return null;
@@ -91,8 +95,10 @@ export function birthdayDaysUntil(birthday) {
   if (!mm || !dd) return null;
   const today = new Date();
   const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const next = new Date(todayMidnight.getFullYear(), mm - 1, dd);
-  if (next < todayMidnight) next.setFullYear(todayMidnight.getFullYear() + 1);
+  // Feb 29 birthdays fall on Feb 28 in non-leap years
+  const occurrence = (y) => new Date(y, mm - 1, mm === 2 && dd === 29 && !isLeapYear(y) ? 28 : dd);
+  let next = occurrence(todayMidnight.getFullYear());
+  if (next < todayMidnight) next = occurrence(todayMidnight.getFullYear() + 1);
   return Math.round((next - todayMidnight) / 86400000);
 }
 

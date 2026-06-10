@@ -27,19 +27,27 @@ function driftRatio(c) {
   return ds === null ? 0 : ds / threshold(c);
 }
 
+function isLeapYear(y) {
+  return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+}
+
 function birthdayDaysUntil(birthday) {
   if (!birthday) return null;
   // Handles both "MM-DD" (new) and "--MM-DD" (legacy, during transition)
-  const normalized = birthday.startsWith("--")
-    ? `2000${birthday.slice(1)}`
-    : /^\d{2}-\d{2}$/.test(birthday)
-      ? `2000-${birthday}`
-      : birthday;
-  const bd = new Date(normalized);
-  const today = new Date();
-  const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const next = new Date(todayMidnight.getFullYear(), bd.getMonth(), bd.getDate());
-  if (next < todayMidnight) next.setFullYear(todayMidnight.getFullYear() + 1);
+  const raw = birthday.startsWith("--") ? birthday.slice(2) : birthday;
+  const [mm, dd] = raw.split("-").map(Number);
+  if (!mm || !dd) return null;
+  // "Today" in GMT+8, consistent with the rest of this handler
+  const nowGmt8 = new Date(Date.now() + 8 * 3600000);
+  const y = nowGmt8.getUTCFullYear();
+  const todayMidnight = Date.UTC(y, nowGmt8.getUTCMonth(), nowGmt8.getUTCDate());
+  // Feb 29 birthdays fall on Feb 28 in non-leap years
+  const occurrence = (yy) => {
+    const day = mm === 2 && dd === 29 && !isLeapYear(yy) ? 28 : dd;
+    return Date.UTC(yy, mm - 1, day);
+  };
+  let next = occurrence(y);
+  if (next < todayMidnight) next = occurrence(y + 1);
   return Math.round((next - todayMidnight) / 86400000);
 }
 
