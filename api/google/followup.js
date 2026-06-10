@@ -1,4 +1,4 @@
-import { getSupabaseAdmin, getValidAccessToken, getFollowUpCalendarId } from "./_utils.js";
+import { getSupabaseAdmin, getValidAccessToken, getFollowUpCalendarId, verifyAuth } from "./_utils.js";
 
 function buildEventBody(contact, date, note) {
   const title = `Follow up: ${contact.name}`;
@@ -27,6 +27,7 @@ function buildEventBody(contact, date, note) {
 }
 
 export default async function handler(req, res) {
+  if (!await verifyAuth(req)) return res.status(401).json({ error: "Unauthorized" });
   const accessToken = await getValidAccessToken();
   if (!accessToken) return res.status(401).json({ error: "not_connected" });
 

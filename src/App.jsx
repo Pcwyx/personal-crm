@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { supabase } from "./supabase.js";
-import { computeStrength, computeCadence, birthdayDaysUntil, todayISO } from "./lib/utils.js";
+import { supabase, authFetch } from "./supabase.js";
+import { computeStrength, TIER_CADENCE, birthdayDaysUntil, todayISO } from "./lib/utils.js";
 import Sidebar from "./components/Sidebar.jsx";
 import BottomNav from "./components/BottomNav.jsx";
 import SpeedDial from "./components/SpeedDial.jsx";
@@ -35,6 +35,7 @@ export default function App() {
   const [globalError, setGlobalError] = useState(null);
   const [search, setSearch] = useState("");
   const [filterRels, setFilterRels] = useState([]);
+  const [filterTier, setFilterTier] = useState(null);
 
   const [viewMode, setViewMode] = useState(() => localStorage.getItem("crm-view-mode") || "grid");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("crm-sidebar-collapsed") === "true");
@@ -44,6 +45,7 @@ export default function App() {
   const [gcalLastSync, setGcalLastSync] = useState(null);
   const [showCalendarSync, setShowCalendarSync] = useState(false);
   const [gcalToast, setGcalToast] = useState(null);
+  const [undoToast, setUndoToast] = useState(null);
 
   const syncTimers = useRef({});
   const loadedRef = useRef(false);
@@ -70,7 +72,7 @@ export default function App() {
 
   // Google Calendar status
   useEffect(() => {
-    fetch("/api/google/status")
+    authFetch("/api/google/status")
       .then(r => r.json())
       .then(({ connected, last_sync }) => {
         setGcalConnected(connected);
@@ -139,7 +141,7 @@ export default function App() {
     const oldEventId = contact.gcal_birthday_event_id || null;
     if (!newBirthday) {
       if (oldEventId) {
-        await fetch("/api/google/birthday", {
+        await authFetch("/api/google/birthday", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ event_id: oldEventId }),
@@ -149,7 +151,7 @@ export default function App() {
       }
       return;
     }
-    const r = await fetch("/api/google/birthday", {
+    const r = await authFetch("/api/google/birthday", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -170,7 +172,7 @@ export default function App() {
     const oldEventId = contact.gcal_followup_event_id || null;
     if (!newDate) {
       if (oldEventId) {
-        await fetch("/api/google/followup", {
+        await authFetch("/api/google/followup", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ event_id: oldEventId }),
@@ -182,7 +184,7 @@ export default function App() {
     }
     const method = oldEventId ? "PUT" : "POST";
     const body = { contact, date: newDate, note: newNote || null, ...(oldEventId ? { event_id: oldEventId } : {}) };
-    const r = await fetch("/api/google/followup", {
+    const r = await authFetch("/api/google/followup", {
       method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -212,7 +214,7 @@ export default function App() {
 
   async function addContact(data) {
     const id = crypto.randomUUID();
-    const cadence = data.cadence || computeCadence(data.relationship || []);
+    const cadence = data.cadence || TIER_CADENCE[data.tier] || 90;
     const now = new Date().toISOString();
     const contact = { id, ...data, cadence, interactions: [], created_at: now, updated_at: now };
     const { interactions: _i, ...fields } = contact;
@@ -231,14 +233,14 @@ export default function App() {
     if (gcalConnected) {
       const contact = contacts.find(c => c.id === id);
       if (contact?.gcal_birthday_event_id) {
-        fetch("/api/google/birthday", {
+        authFetch("/api/google/birthday", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ event_id: contact.gcal_birthday_event_id }),
         });
       }
       if (contact?.gcal_followup_event_id) {
-        fetch("/api/google/followup", {
+        authFetch("/api/google/followup", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ event_id: contact.gcal_followup_event_id }),
@@ -278,16 +280,33 @@ export default function App() {
     }));
   }
 
-  async function deleteInteraction(contactId, interactionId) {
-    await supabase.from("interactions").delete().eq("id", interactionId);
-    const existing = contacts.find(c => c.id === contactId);
-    const ints = (existing?.interactions || []).filter(i => i.id !== interactionId);
+  function deleteInteraction(contactId, interactionId) {
+    const contactBefore = contacts.find(c => c.id === contactId);
+    const ints = (contactBefore?.interactions || []).filter(i => i.id !== interactionId);
     const newLast = ints.length ? ints.reduce((mx, i) => i.date > mx ? i.date : mx, "") : null;
-    await supabase.from("contacts").update({ last_contact: newLast }).eq("id", contactId);
-    setContacts(prev => prev.map(c => {
-      if (c.id !== contactId) return c;
-      return { ...c, interactions: ints, last_contact: newLast };
-    }));
+
+    // Optimistic remove
+    setContacts(prev => prev.map(c =>
+      c.id !== contactId ? c : { ...c, interactions: ints, last_contact: newLast }
+    ));
+
+    // Cancel any previous undo toast
+    if (undoToast) clearTimeout(undoToast.timerId);
+
+    const timerId = setTimeout(async () => {
+      await supabase.from("interactions").delete().eq("id", interactionId);
+      await supabase.from("contacts").update({ last_contact: newLast }).eq("id", contactId);
+      setUndoToast(null);
+    }, 5000);
+
+    setUndoToast({
+      timerId,
+      onUndo: () => {
+        clearTimeout(timerId);
+        setContacts(prev => prev.map(c => c.id === contactId ? contactBefore : c));
+        setUndoToast(null);
+      },
+    });
   }
 
   // ── SELECT MODE ──────────────────────────────────────────────────────────────
@@ -348,21 +367,23 @@ export default function App() {
   const overdueFollowUpCount = contacts.filter(
     c => c.next_follow_up && c.next_follow_up < today
   ).length;
-  // Home stat card: overdue follow-ups + going cold (90d)
+  // Home stat card: overdue follow-ups + going cold (tier-based threshold)
   const overdueIds = new Set(contacts.filter(c => c.next_follow_up && c.next_follow_up < today).map(c => c.id));
   const needsAttentionCount = overdueFollowUpCount + contacts.filter(c => {
     if (overdueIds.has(c.id)) return false;
+    const threshold = TIER_CADENCE[c.tier] || 90;
     const ds = c.last_contact ? Math.floor((Date.now() - new Date(c.last_contact)) / 86400000) : null;
-    return ds !== null && ds > 90;
+    return ds !== null && ds > threshold;
   }).length;
   const detailContact = contacts.find(c => c.id === detailId) || null;
 
-  const hasFilter = filterRels.length > 0 || search.length > 0;
+  const hasFilter = filterRels.length > 0 || filterTier !== null || search.length > 0;
   const filteredForExport = hasFilter ? contacts.filter(c => {
     const q = search.toLowerCase();
     const matchSearch = !q || c.name?.toLowerCase().includes(q) || c.role?.toLowerCase().includes(q) || c.tags?.some(t => t.toLowerCase().includes(q));
     const matchRel = !filterRels.length || filterRels.every(r => (c.relationship || []).includes(r));
-    return matchSearch && matchRel;
+    const matchTier = filterTier === null || c.tier === filterTier;
+    return matchSearch && matchRel && matchTier;
   }) : [];
 
   // ── RENDER ───────────────────────────────────────────────────────────────────
@@ -406,12 +427,12 @@ export default function App() {
         onGcalConnect={() => { window.location.href = "/api/google/auth"; }}
         onGcalSync={() => setShowCalendarSync(true)}
         onGcalDisconnect={async () => {
-          await fetch("/api/google/disconnect", { method: "POST" });
+          await authFetch("/api/google/disconnect", { method: "POST" });
           setGcalConnected(false);
           setGcalLastSync(null);
         }}
         onGcalSyncBirthdays={async () => {
-          const r = await fetch("/api/google/birthday-bulk", { method: "POST" });
+          const r = await authFetch("/api/google/birthday-bulk", { method: "POST" });
           const { synced, total } = await r.json();
           setGcalToast(`已同步 ${synced} / ${total} 筆生日到 CRM Birthdays`);
           setTimeout(() => setGcalToast(null), 4000);
@@ -433,6 +454,7 @@ export default function App() {
               {...viewProps}
               search={search} onSearchChange={setSearch}
               filterRels={filterRels} onFilterRelsChange={setFilterRels}
+              filterTier={filterTier} onFilterTierChange={setFilterTier}
               viewMode={viewMode}
               selectMode={selectMode}
               selectedIds={selectedIds}
@@ -459,6 +481,7 @@ export default function App() {
 
         {detailContact && (
           <ContactDetail
+            key={detailContact.id}
             contact={detailContact}
             onClose={() => setDetailId(null)}
             onUpdate={(patch) => updateContact(detailContact.id, patch)}
@@ -546,6 +569,28 @@ export default function App() {
           whiteSpace: "nowrap",
         }}>
           {gcalToast}
+        </div>
+      )}
+
+      {undoToast && (
+        <div style={{
+          position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)",
+          background: "var(--ink)", color: "#fff", fontSize: 13.5, fontWeight: 500,
+          padding: "10px 16px", borderRadius: 10, zIndex: 9999,
+          boxShadow: "0 4px 16px rgba(0,0,0,.2)",
+          display: "flex", alignItems: "center", gap: 12, whiteSpace: "nowrap",
+        }}>
+          <span>Interaction deleted</span>
+          <button
+            onClick={undoToast.onUndo}
+            style={{
+              background: "none", border: "1px solid rgba(255,255,255,0.45)",
+              color: "#fff", fontSize: 12.5, fontWeight: 600,
+              padding: "3px 10px", borderRadius: 6, cursor: "pointer",
+            }}
+          >
+            Undo
+          </button>
         </div>
       )}
 

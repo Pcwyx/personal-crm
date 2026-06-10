@@ -2,7 +2,7 @@ import { getSupabaseAdmin } from "./google/_utils.js";
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const ALLOWED_ID = process.env.TELEGRAM_CHAT_ID;
-const OPENAI_KEY = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
+const OPENAI_KEY = process.env.OPENAI_API_KEY;
 const TG = `https://api.telegram.org/bot${TOKEN}`;
 
 function esc(s) {
@@ -128,6 +128,15 @@ async function handleNew(sb, chatId, text) {
   try { parsed = await parseMsg(text); }
   catch (e) { await send(chatId, `❌ 解析失敗：${e.message}`); return; }
 
+  const VALID_TYPES = new Set(["Coffee", "Meal", "Call", "Video Call", "Meeting", "Message", "Note"]);
+  if (!VALID_TYPES.has(parsed.type)) parsed.type = "Note";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) {
+    parsed.date = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+  }
+  if (typeof parsed.note === "string" && parsed.note.length > 500) parsed.note = parsed.note.slice(0, 500);
+  if (!Array.isArray(parsed.contacts)) parsed.contacts = [];
+  parsed.contacts = parsed.contacts.filter(c => typeof c === "string").slice(0, 20);
+
   if (!parsed.contacts?.length) {
     await send(chatId, "找不到人名，請重新描述。");
     return;
@@ -195,6 +204,7 @@ async function handleCb(sb, chatId, msgId, data) {
     if (choice !== "skip") {
       const idx = parseInt(choice);
       const item = state.pending[state.pidx];
+      if (isNaN(idx) || idx < 0 || idx >= item.candidates.length) return;
       state.resolved.push({ query: item.query, contact: item.candidates[idx] });
     }
     state.pidx++;
@@ -265,8 +275,9 @@ async function handleCb(sb, chatId, msgId, data) {
   if (data.startsWith("fuwho:")) {
     const contactId = data.slice(6);
     const contact = state.resolved.find(r => r.contact.id === contactId)?.contact;
-    await setState(sb, chatId, { ...state, step: "fu", fuId: contactId, fuName: contact?.name || "" });
-    await send(chatId, `要多久後 follow-up <b>${esc(contact?.name || "")}</b>？`, FU_KB);
+    if (!contact) return;
+    await setState(sb, chatId, { ...state, step: "fu", fuId: contact.id, fuName: contact.name });
+    await send(chatId, `要多久後 follow-up <b>${esc(contact.name)}</b>？`, FU_KB);
     return;
   }
 
@@ -288,6 +299,10 @@ async function handleCb(sb, chatId, msgId, data) {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
+  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (webhookSecret && req.headers["x-telegram-bot-api-secret-token"] !== webhookSecret) {
+    return res.status(401).end();
+  }
   const sb = getSupabaseAdmin();
 
   try {

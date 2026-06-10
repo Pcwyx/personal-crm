@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { INTERACTION_TYPES } from "../lib/utils.js";
+import { authFetch } from "../supabase.js";
 
 export default function CalendarSyncModal({ onClose, onImported }) {
   const [loading, setLoading] = useState(true);
@@ -10,7 +11,7 @@ export default function CalendarSyncModal({ onClose, onImported }) {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetch("/api/google/sync")
+    authFetch("/api/google/sync")
       .then(r => r.json())
       .then(({ preview: items, error: err }) => {
         if (err) { setError(err); setLoading(false); return; }
@@ -45,7 +46,7 @@ export default function CalendarSyncModal({ onClose, onImported }) {
       }));
     if (!items.length) { onClose(); return; }
     setImporting(true);
-    const r = await fetch("/api/google/sync", {
+    const r = await authFetch("/api/google/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ items }),

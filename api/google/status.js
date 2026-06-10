@@ -1,6 +1,7 @@
-import { getSupabaseAdmin } from "./_utils.js";
+import { getSupabaseAdmin, verifyAuth } from "./_utils.js";
 
 export default async function handler(req, res) {
+  if (!await verifyAuth(req)) return res.status(401).json({ error: "Unauthorized" });
   const supabase = getSupabaseAdmin();
   const { data: tokenRow } = await supabase
     .from("settings")

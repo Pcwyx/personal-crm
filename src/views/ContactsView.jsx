@@ -1,4 +1,4 @@
-import { RELATIONSHIPS, birthdayDaysUntil, formatRelative } from "../lib/utils.js";
+import { RELATIONSHIPS, TIER_COLORS, birthdayDaysUntil, formatRelative } from "../lib/utils.js";
 import Avatar from "../components/Avatar.jsx";
 import RelChip from "../components/RelChip.jsx";
 import DueBadge from "../components/DueBadge.jsx";
@@ -7,6 +7,7 @@ export default function ContactsView({
   contacts, onOpenDetail, today,
   search, onSearchChange,
   filterRels, onFilterRelsChange,
+  filterTier, onFilterTierChange,
   viewMode,
   selectMode, selectedIds, onToggleSelect, onSelectAll,
 }) {
@@ -21,7 +22,8 @@ export default function ContactsView({
       c.bio?.toLowerCase().includes(q) ||
       c.interactions?.some(i => i.note?.toLowerCase().includes(q));
     const matchRel = !filterRels.length || filterRels.every(r => (c.relationship || []).includes(r));
-    return matchSearch && matchRel;
+    const matchTier = filterTier === null || c.tier === filterTier;
+    return matchSearch && matchRel && matchTier;
   });
 
   function toggleFilter(rel) {
@@ -68,7 +70,9 @@ export default function ContactsView({
             </div>
           )}
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+
+        {/* Relationship filter */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
           {RELATIONSHIPS.map(rel => (
             <button
               key={rel}
@@ -79,12 +83,36 @@ export default function ContactsView({
             </button>
           ))}
         </div>
+
+        {/* Tier filter */}
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <span style={{ fontSize: 11, color: "var(--ink-faint)", fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase" }}>Tier</span>
+          {[1, 2, 3, 4].map(t => {
+            const col = TIER_COLORS[t];
+            const active = filterTier === t;
+            return (
+              <button
+                key={t}
+                onClick={() => onFilterTierChange(active ? null : t)}
+                style={{
+                  padding: "3px 10px", borderRadius: 5, fontSize: 12, fontWeight: 700,
+                  border: `1.5px solid ${active ? col.border : "var(--border)"}`,
+                  background: active ? col.bg : "none",
+                  color: active ? col.text : "var(--ink-mid)",
+                  cursor: "pointer",
+                }}
+              >
+                T{t}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Results count */}
       <div style={{ fontSize: 12, color: "var(--ink-faint)", marginBottom: 14 }}>
         {filtered.length} {filtered.length === 1 ? "contact" : "contacts"}
-        {(search || filterRels.length > 0) ? " matched" : ""}
+        {(search || filterRels.length > 0 || filterTier !== null) ? " matched" : ""}
       </div>
 
       {filtered.length === 0 ? (
@@ -106,6 +134,21 @@ export default function ContactsView({
   );
 }
 
+function TierBadge({ tier }) {
+  if (!tier) return null;
+  const col = TIER_COLORS[tier];
+  return (
+    <span style={{
+      position: "absolute", top: 8, right: 8,
+      fontSize: 10, fontWeight: 700, letterSpacing: ".05em",
+      padding: "2px 6px", borderRadius: 4,
+      background: col.bg, color: col.text,
+    }}>
+      T{tier}
+    </span>
+  );
+}
+
 function ContactCard({ contact: c, today, selectMode, isSelected, onClick }) {
   const bdDays = birthdayDaysUntil(c.birthday);
   const showBdBadge = bdDays !== null && bdDays <= 14;
@@ -114,12 +157,14 @@ function ContactCard({ contact: c, today, selectMode, isSelected, onClick }) {
     <div
       className={`contact-card${isSelected ? " selected" : ""}`}
       onClick={onClick}
+      style={{ position: "relative" }}
     >
       {selectMode && (
         <div className={`card-checkbox${isSelected ? " checked" : ""}`}>
           {isSelected && "✓"}
         </div>
       )}
+      {!selectMode && <TierBadge tier={c.tier} />}
       <div className="contact-card-avatar" style={selectMode ? { paddingLeft: 22 } : {}}>
         <Avatar contact={c} size={44} />
       </div>
@@ -130,7 +175,7 @@ function ContactCard({ contact: c, today, selectMode, isSelected, onClick }) {
       <div className="contact-card-meta">
         {(c.relationship || []).slice(0, 1).map(r => <RelChip key={r} rel={r} />)}
         {(c.tags || []).slice(0, 2).map(t => (
-          <span key={t} className="tag-chip">{t}</span>
+          <span key={t} className="tag-chip">{t.includes(":") ? t.split(":")[1] : t}</span>
         ))}
         {showBdBadge && (
           <span className="bday-badge">{bdDays === 0 ? "🎂 Today" : `🎂 ${bdDays}d`}</span>
@@ -159,7 +204,17 @@ function ContactRow({ contact: c, today, selectMode, isSelected, onClick }) {
       )}
       <Avatar contact={c} size={38} />
       <div className="contact-row-info">
-        <div className="contact-row-name">{c.name}</div>
+        <div className="contact-row-name">
+          {c.name}
+          {c.tier && (
+            <span style={{
+              marginLeft: 6, fontSize: 10, fontWeight: 700,
+              padding: "1px 5px", borderRadius: 3,
+              background: TIER_COLORS[c.tier].bg,
+              color: TIER_COLORS[c.tier].text,
+            }}>T{c.tier}</span>
+          )}
+        </div>
         <div className="contact-row-role">{[c.role, c.company].filter(Boolean).join(" · ")}</div>
       </div>
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>

@@ -553,6 +553,9 @@ a { color: inherit; }
   white-space: nowrap;
 }
 .tag-chip.accent { background: var(--acc-pale); color: var(--acc); border-color: var(--acc-light); }
+.tag-chip.structured { background: var(--cream); color: var(--ink); }
+.tag-chip.structured.accent { background: var(--acc-pale); }
+.tag-ns { opacity: 0.55; font-size: 0.9em; }
 
 /* ── BIRTHDAY BADGE ──────────────────────────────────────────────────────── */
 .bday-badge {

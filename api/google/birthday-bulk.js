@@ -1,4 +1,4 @@
-import { getSupabaseAdmin, getValidAccessToken } from "./_utils.js";
+import { getSupabaseAdmin, getValidAccessToken, verifyAuth } from "./_utils.js";
 
 function nextBirthdayYear(mm, dd) {
   const now = new Date(Date.now() + 8 * 3600000);
@@ -56,6 +56,7 @@ async function resetBirthdayCalendar(supabase, accessToken) {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
+  if (!await verifyAuth(req)) return res.status(401).json({ error: "Unauthorized" });
 
   const accessToken = await getValidAccessToken();
   if (!accessToken) return res.status(401).json({ error: "not_connected" });

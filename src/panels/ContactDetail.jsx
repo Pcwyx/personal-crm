@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { authFetch } from "../supabase.js";
 import {
   computeStrength, strengthColor, strengthLabel,
   formatBirthday, formatDate, formatRelative,
   interactionEmoji, daysUntilDate, birthdayDaysUntil,
-  todayISO, followUpDaysPreset, RELATIONSHIPS, computeCadence,
+  todayISO, followUpDaysPreset, RELATIONSHIPS,
+  TIER_CADENCE, TIER_COLORS, TAG_NAMESPACES, groupTags,
 } from "../lib/utils.js";
 import Avatar from "../components/Avatar.jsx";
 import RelChip from "../components/RelChip.jsx";
@@ -26,11 +28,11 @@ export default function ContactDetail({ contact: c, onClose, onUpdate, onAddInte
   const strength = computeStrength(c);
   const sColor = strengthColor(strength);
   const sLabel = strengthLabel(strength);
-  const cadence = c.cadence || 90;
+  const tierCadence = TIER_CADENCE[c.tier] || 90;
   const daysSince = c.last_contact
     ? Math.floor((Date.now() - new Date(c.last_contact + "T00:00:00")) / 86400000)
     : null;
-  const cadenceProgress = daysSince !== null ? Math.min(100, (daysSince / cadence) * 100) : 0;
+  const cadenceProgress = daysSince !== null ? Math.min(100, (daysSince / tierCadence) * 100) : 0;
   const barColor = cadenceProgress < 70 ? "var(--green)" : cadenceProgress < 100 ? "var(--amber)" : "var(--red)";
   const today = todayISO();
 
@@ -59,18 +61,19 @@ Return ONLY valid JSON, no markdown:
 {"action": "A short specific action to take (under 12 words, starts with a verb)", "message": "A warm natural draft message to send (2-4 sentences, casual and genuine)"}`;
 
     try {
-      const res = await fetch("/api/ai", {
+      const res = await authFetch("/api/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: [{ role: "user", content: prompt }], max_tokens: 500 }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const text = data.choices?.[0]?.message?.content || "{}";
       const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
       setAiResult(parsed);
       setAiState("done");
     } catch {
-      setAiState("idle");
+      setAiState("error");
     }
   }
 
@@ -93,18 +96,19 @@ ${recent || "None recorded"}
 Return ONLY valid JSON, no markdown:
 {"lastMeeting": "One sentence about the most recent interaction, or null", "background": "2-3 key things to remember about this person in one short paragraph", "topics": ["specific talking point 1", "specific talking point 2", "specific talking point 3"]}`;
     try {
-      const res = await fetch("/api/ai", {
+      const res = await authFetch("/api/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: [{ role: "user", content: prompt }], max_tokens: 600 }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const text = data.choices?.[0]?.message?.content || "{}";
       const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
       setPrepResult(parsed);
       setPrepState("done");
     } catch {
-      setPrepState("idle");
+      setPrepState("error");
     }
   }
 
@@ -169,7 +173,9 @@ Return ONLY valid JSON, no markdown:
             <div className="dp-bar-fill" style={{ width: `${strength * 100}%`, background: sColor }} />
           </div>
           <div className="dp-health-label">
-            <span className="dp-health-name">Cadence ({cadence}d)</span>
+            <span className="dp-health-name">
+              T{c.tier || 3} cadence ({tierCadence}d)
+            </span>
             <span className="dp-health-value" style={{ color: barColor }}>
               {daysSince !== null ? `${daysSince}d since last contact` : "No contact yet"}
             </span>
@@ -239,6 +245,11 @@ Return ONLY valid JSON, no markdown:
           {prepState === "idle" && (
             <button className="ai-generate-btn" onClick={generatePrep}>✨ Generate brief</button>
           )}
+          {prepState === "error" && (
+            <div style={{ fontSize: 12, color: "var(--red)", padding: "6px 0" }}>
+              AI request failed. <button onClick={() => setPrepState("idle")} style={{ background: "none", border: "none", color: "var(--acc)", cursor: "pointer", fontSize: 12, textDecoration: "underline" }}>Try again</button>
+            </div>
+          )}
         </div>
       )}
 
@@ -303,9 +314,7 @@ Return ONLY valid JSON, no markdown:
         {(c.tags || []).length > 0 && (
           <div className="dp-section">
             <div className="dp-section-title">Tags</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-              {c.tags.map(t => <span key={t} className="tag-chip accent">{t}</span>)}
-            </div>
+            <TagDisplay tags={c.tags} />
           </div>
         )}
 
@@ -343,6 +352,11 @@ Return ONLY valid JSON, no markdown:
             {aiState === "loading" && (
               <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center", padding: "10px 0", fontSize: 13, color: "var(--ink-mid)" }}>
                 <span className="spin" style={{ display: "inline-block" }}>⏳</span> Thinking…
+              </div>
+            )}
+            {aiState === "error" && (
+              <div style={{ fontSize: 12, color: "var(--red)", padding: "6px 0" }}>
+                AI request failed. <button onClick={() => setAiState("idle")} style={{ background: "none", border: "none", color: "var(--acc)", cursor: "pointer", fontSize: 12, textDecoration: "underline" }}>Try again</button>
               </div>
             )}
             {aiState === "done" && aiResult && (
@@ -421,13 +435,16 @@ function EditContactPanel({ contact: c, onSave, onCancel }) {
     birthday: c.birthday || "",
     location: c.location || "",
     relationship: c.relationship || [],
-    cadenceOverride: c.cadence !== computeCadence(c.relationship || []) ? String(c.cadence || "") : "",
+    tier: c.tier || 3,
     tags: c.tags || [],
     notes: c.notes || "",
     bio: c.bio || "",
     important_dates: c.important_dates ? [...c.important_dates] : [],
   });
-  const [tagInput, setTagInput] = useState("");
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
+  const [tagPickerNs, setTagPickerNs] = useState("");
+  const [tagPickerVal, setTagPickerVal] = useState("");
+  const [tagDraft, setTagDraft] = useState("");
   const [newDateName, setNewDateName] = useState("");
   const [newDateVal, setNewDateVal] = useState("");
 
@@ -443,15 +460,20 @@ function EditContactPanel({ contact: c, onSave, onCancel }) {
   function addTag(raw) {
     const tag = raw.trim().toLowerCase().replace(/,/g, "");
     if (tag && !form.tags.includes(tag)) set("tags", [...form.tags, tag]);
-    setTagInput("");
+    setTagDraft("");
+  }
+
+  function addStructuredTag() {
+    const tag = tagPickerNs
+      ? `${tagPickerNs}:${tagPickerVal.trim().toLowerCase()}`
+      : tagPickerVal.trim().toLowerCase();
+    if (tag && tag !== ":" && !form.tags.includes(tag)) set("tags", [...form.tags, tag]);
+    setTagPickerNs("");
+    setTagPickerVal("");
+    setTagPickerOpen(false);
   }
 
   function removeTag(t) { set("tags", form.tags.filter(x => x !== t)); }
-
-  function handleTagKey(e) {
-    if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTag(tagInput); }
-    if (e.key === "Backspace" && !tagInput && form.tags.length) removeTag(form.tags[form.tags.length - 1]);
-  }
 
   function addImportantDate() {
     if (!newDateName.trim() || !newDateVal.trim()) return;
@@ -472,12 +494,6 @@ function EditContactPanel({ contact: c, onSave, onCancel }) {
     if (form.twitter.trim()) social.twitter = form.twitter.trim();
     if (form.instagram.trim()) social.instagram = form.instagram.trim();
 
-    const cadenceOverrideNum = parseInt(form.cadenceOverride, 10);
-    const computedCadence = computeCadence(form.relationship);
-    const cadence = (!isNaN(cadenceOverrideNum) && cadenceOverrideNum > 0)
-      ? cadenceOverrideNum
-      : computedCadence;
-
     onSave({
       name: form.name.trim(),
       role: form.role.trim() || null,
@@ -487,7 +503,7 @@ function EditContactPanel({ contact: c, onSave, onCancel }) {
       birthday: form.birthday.trim() || null,
       location: form.location.trim() || null,
       relationship: form.relationship,
-      cadence,
+      tier: form.tier,
       tags: form.tags,
       notes: form.notes.trim() || null,
       bio: form.bio.trim() || null,
@@ -599,22 +615,29 @@ function EditContactPanel({ contact: c, onSave, onCancel }) {
               </button>
             ))}
           </div>
-          <label className="form-label">Cadence (days)</label>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-            <input
-              className="form-input"
-              type="number"
-              min="1"
-              placeholder={`Auto (${computeCadence(form.relationship)}d)`}
-              value={form.cadenceOverride}
-              onChange={e => set("cadenceOverride", e.target.value)}
-              style={{ width: 120 }}
-            />
-            {form.cadenceOverride && (
-              <button type="button" onClick={() => set("cadenceOverride", "")} style={{ fontSize: 12, color: "var(--ink-faint)", background: "none", border: "none", cursor: "pointer" }}>
-                Reset to auto
-              </button>
-            )}
+          <label className="form-label" style={{ marginBottom: 6, display: "block" }}>Priority Tier</label>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[1, 2, 3, 4].map(t => {
+              const col = TIER_COLORS[t];
+              const active = form.tier === t;
+              return (
+                <button key={t} type="button"
+                  onClick={() => set("tier", t)}
+                  style={{
+                    padding: "5px 14px", borderRadius: 6, fontSize: 13, fontWeight: 700,
+                    border: `1.5px solid ${active ? col.border : "var(--border)"}`,
+                    background: active ? col.bg : "none",
+                    color: active ? col.text : "var(--ink-mid)",
+                    cursor: "pointer",
+                  }}
+                >
+                  T{t}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--ink-faint)", marginTop: 5 }}>
+            T1 = 30d · T2 = 60d · T3 = 90d · T4 = 180d
           </div>
         </div>
 
@@ -622,20 +645,81 @@ function EditContactPanel({ contact: c, onSave, onCancel }) {
         <div className="dp-section">
           <div className="dp-section-title">Tags</div>
           <div className="tag-input-wrap">
-            {form.tags.map(t => (
-              <span key={t} className="tag-chip">
-                {t} <button type="button" className="tag-rm" onClick={() => removeTag(t)}>×</button>
-              </span>
-            ))}
+            {form.tags.map(t => {
+              const isStructured = t.includes(":");
+              const [ns, val] = isStructured ? t.split(/:(.+)/) : [null, t];
+              return (
+                <span key={t} className={`tag-chip${isStructured ? " structured" : ""}`}>
+                  {isStructured && <span className="tag-ns">{ns}:</span>}{isStructured ? val : t}
+                  <button type="button" className="tag-rm" onClick={() => removeTag(t)}>×</button>
+                </span>
+              );
+            })}
             <input
               className="tag-input"
               placeholder="Add tag…"
-              value={tagInput}
-              onChange={e => setTagInput(e.target.value)}
-              onKeyDown={handleTagKey}
-              onBlur={() => tagInput && addTag(tagInput)}
+              value={tagDraft}
+              onChange={e => setTagDraft(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTag(tagDraft); }
+                if (e.key === "Backspace" && !tagDraft && form.tags.length) removeTag(form.tags[form.tags.length - 1]);
+              }}
+              onBlur={() => tagDraft && addTag(tagDraft)}
             />
+            <button
+              type="button"
+              onClick={() => setTagPickerOpen(v => !v)}
+              style={{ fontSize: 16, color: "var(--acc)", background: "none", border: "none", cursor: "pointer", padding: "0 2px", lineHeight: 1 }}
+              title="Add structured tag"
+            >＋</button>
           </div>
+          {tagPickerOpen && (
+            <div style={{
+              marginTop: 8, padding: "10px 12px",
+              background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8,
+              display: "flex", flexDirection: "column", gap: 8,
+            }}>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                {TAG_NAMESPACES.map(ns => (
+                  <button key={ns} type="button"
+                    onClick={() => setTagPickerNs(tagPickerNs === ns ? "" : ns)}
+                    style={{
+                      padding: "3px 8px", borderRadius: 5, fontSize: 11.5, cursor: "pointer",
+                      border: "1px solid var(--border)",
+                      background: tagPickerNs === ns ? "var(--acc-pale)" : "none",
+                      color: tagPickerNs === ns ? "var(--acc)" : "var(--ink-mid)",
+                    }}
+                  >{ns}</button>
+                ))}
+                <button type="button"
+                  onClick={() => setTagPickerNs("")}
+                  style={{
+                    padding: "3px 8px", borderRadius: 5, fontSize: 11.5, cursor: "pointer",
+                    border: "1px solid var(--border)",
+                    background: tagPickerNs === "" ? "var(--acc-pale)" : "none",
+                    color: tagPickerNs === "" ? "var(--acc)" : "var(--ink-faint)",
+                  }}
+                >general</button>
+              </div>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                {tagPickerNs && <span style={{ fontSize: 12, color: "var(--ink-mid)", fontWeight: 600, whiteSpace: "nowrap" }}>{tagPickerNs}:</span>}
+                <input
+                  className="form-input"
+                  style={{ flex: 1, fontSize: 13 }}
+                  placeholder={tagPickerNs ? `e.g. "tech"` : "tag value"}
+                  value={tagPickerVal}
+                  onChange={e => setTagPickerVal(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") addStructuredTag(); if (e.key === "Escape") setTagPickerOpen(false); }}
+                  autoFocus
+                />
+                <button type="button" className="btn-primary"
+                  style={{ fontSize: 12, padding: "5px 10px" }}
+                  onClick={addStructuredTag}
+                  disabled={!tagPickerVal.trim()}
+                >Add</button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Notes & Bio */}
@@ -684,6 +768,29 @@ function EditContactPanel({ contact: c, onSave, onCancel }) {
 
         <div style={{ height: 40 }} />
       </div>
+    </div>
+  );
+}
+
+function TagDisplay({ tags }) {
+  const { general, structured } = groupTags(tags);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {Object.entries(structured).map(([ns, items]) => (
+        <div key={ns} style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
+          <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--ink-faint)", textTransform: "uppercase", letterSpacing: ".06em", marginRight: 2 }}>{ns}</span>
+          {items.map(({ tag, value }) => (
+            <span key={tag} className="tag-chip accent structured">
+              {value}
+            </span>
+          ))}
+        </div>
+      ))}
+      {general.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+          {general.map(t => <span key={t} className="tag-chip accent">{t}</span>)}
+        </div>
+      )}
     </div>
   );
 }

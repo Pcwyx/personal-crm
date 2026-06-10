@@ -3,6 +3,10 @@ import { createClient } from "@supabase/supabase-js";
 
 const APP_URL = "https://personal-crm-silk.vercel.app";
 
+function esc(s) {
+  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 const RELATIONSHIP_CADENCE = {
   Family: 30, Friend: 60, School: 90, Colleague: 75, Network: 90, Mentor: 45, Collaborator: 60,
 };
@@ -46,13 +50,13 @@ function formatDate(str) {
 }
 
 function contactRow(c, detail) {
-  const sub = [c.role, c.company].filter(Boolean).join(" · ");
+  const sub = [c.role, c.company].filter(Boolean).map(esc).join(" · ");
   const link = `${APP_URL}/?contact=${c.id}`;
   return `
     <tr>
       <td style="padding:11px 0;border-bottom:1px solid rgba(60,50,40,0.07);">
         <a href="${link}" style="text-decoration:none;color:inherit;display:block;">
-          <span style="font-size:14px;font-weight:600;color:#2A251F;">${c.name || "未命名"}</span>
+          <span style="font-size:14px;font-weight:600;color:#2A251F;">${esc(c.name) || "未命名"}</span>
           ${sub ? `<span style="font-size:12px;color:#8B7F70;margin-left:8px;">${sub}</span>` : ""}
           <div style="font-size:12px;color:#6B6055;margin-top:3px;">${detail}</div>
         </a>
@@ -90,12 +94,12 @@ function wrapEmail(body, dateLabel) {
 
 export default async function handler(req, res) {
   const secret = process.env.CRON_SECRET;
-  if (secret && req.headers.authorization !== `Bearer ${secret}`) {
+  if (!secret || req.headers.authorization !== `Bearer ${secret}`) {
     return res.status(401).end();
   }
 
   const supabase = createClient(
-    process.env.VITE_SUPABASE_URL,
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY,
     { auth: { persistSession: false } }
   );
@@ -141,7 +145,7 @@ export default async function handler(req, res) {
     const followTop = followAll.slice(0, 5);
     const followRows = followTop.map(c => {
       const isOverdue = c.next_follow_up < todayISO;
-      const label = `${isOverdue ? "逾期 · " : ""}${formatDate(c.next_follow_up)}${c.follow_up_note ? ` — ${c.follow_up_note}` : ""}`;
+      const label = `${isOverdue ? "逾期 · " : ""}${formatDate(c.next_follow_up)}${c.follow_up_note ? ` — ${esc(c.follow_up_note)}` : ""}`;
       return contactRow(c, label);
     });
 
@@ -181,13 +185,13 @@ export default async function handler(req, res) {
   }
 
   for (const c of todayBirthdays) {
-    const sub = [c.role, c.company].filter(Boolean).join(" · ");
-    const bio = c.bio || c.notes || "";
+    const sub = [c.role, c.company].filter(Boolean).map(esc).join(" · ");
+    const bio = esc(c.bio || c.notes || "");
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
     <body style="margin:0;padding:0;background:#F5F1EA;">
       <div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:560px;margin:0 auto;padding:36px 24px;">
         <div style="margin-bottom:24px;">
-          <div style="font-size:21px;font-weight:700;color:#2A251F;">今天的壽星是：${c.name}</div>
+          <div style="font-size:21px;font-weight:700;color:#2A251F;">今天的壽星是：${esc(c.name)}</div>
           ${sub ? `<div style="font-size:13px;color:#6B6055;margin-top:5px;">${sub}</div>` : ""}
         </div>
         <div style="background:#FBF8F3;border:1px solid rgba(60,50,40,0.09);border-radius:10px;padding:24px;text-align:center;">

@@ -1,4 +1,4 @@
-import { getSupabaseAdmin, getValidAccessToken, getBirthdayCalendarId } from "./_utils.js";
+import { getSupabaseAdmin, getValidAccessToken, getBirthdayCalendarId, verifyAuth } from "./_utils.js";
 
 // Next occurrence of MM-DD from today (Asia/Taipei)
 function nextBirthdayYear(mm, dd) {
@@ -33,6 +33,7 @@ function buildEventBody(contact, mm, dd) {
 }
 
 export default async function handler(req, res) {
+  if (!await verifyAuth(req)) return res.status(401).json({ error: "Unauthorized" });
   const accessToken = await getValidAccessToken();
   if (!accessToken) return res.status(401).json({ error: "not_connected" });
 

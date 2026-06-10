@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { birthdayDaysUntil, formatBirthday } from "../lib/utils.js";
+import { birthdayDaysUntil, formatBirthday, TIER_CADENCE } from "../lib/utils.js";
 import Avatar, { AvatarSimple } from "../components/Avatar.jsx";
 import DueBadge from "../components/DueBadge.jsx";
 
@@ -47,10 +47,11 @@ export default function HomeView({ contacts, onOpenDetail, today, needsAttention
   const goingCold = contacts
     .filter(c => {
       if (overdueFollowUpIds.has(c.id)) return false;
+      const threshold = TIER_CADENCE[c.tier] || 90;
       const ds = c.last_contact
         ? Math.floor((Date.now() - new Date(c.last_contact)) / 86400000)
         : null;
-      return ds !== null && ds > 90;
+      return ds !== null && ds > threshold;
     })
     .sort((a, b) => {
       const da = a.last_contact ? Math.floor((Date.now() - new Date(a.last_contact)) / 86400000) : 9999;

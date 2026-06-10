@@ -1,12 +1,20 @@
 import { getSupabaseAdmin, getFollowUpCalendarId } from "./_utils.js";
 
 export default async function handler(req, res) {
-  const { code, error } = req.query;
+  const { code, error, state } = req.query;
   const appUrl = (process.env.VITE_APP_URL || "https://personal-crm-silk.vercel.app").trim();
 
   if (error || !code) {
     return res.redirect(`${appUrl}?gcal_error=${encodeURIComponent(error || "no_code")}`);
   }
+
+  const supabase = getSupabaseAdmin();
+  const { data: stateRow } = await supabase.from("settings").select("value").eq("key", "oauth_state").single();
+  const stored = stateRow?.value;
+  if (!stored?.state || stored.state !== state || stored.expires < Date.now()) {
+    return res.redirect(`${appUrl}?gcal_error=invalid_state`);
+  }
+  await supabase.from("settings").delete().eq("key", "oauth_state");
 
   const r = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",

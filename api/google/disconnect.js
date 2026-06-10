@@ -1,7 +1,8 @@
-import { getSupabaseAdmin } from "./_utils.js";
+import { getSupabaseAdmin, verifyAuth } from "./_utils.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
+  if (!await verifyAuth(req)) return res.status(401).json({ error: "Unauthorized" });
 
   const supabase = getSupabaseAdmin();
   await supabase.from("settings").delete().eq("key", "google_tokens");

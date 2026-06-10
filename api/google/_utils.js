@@ -2,9 +2,20 @@ import { createClient } from "@supabase/supabase-js";
 
 export function getSupabaseAdmin() {
   return createClient(
-    process.env.VITE_SUPABASE_URL,
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
   );
+}
+
+export async function verifyAuth(req) {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return null;
+  const client = createClient(
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
+    process.env.VITE_SUPABASE_ANON_KEY
+  );
+  const { data: { user } } = await client.auth.getUser(token);
+  return user ?? null;
 }
 
 export async function getValidAccessToken() {

@@ -1,4 +1,4 @@
-import { getSupabaseAdmin, getValidAccessToken, inferType, matchContact } from "./_utils.js";
+import { getSupabaseAdmin, getValidAccessToken, inferType, matchContact, verifyAuth } from "./_utils.js";
 
 const DAYS_BACK = 30;
 
@@ -50,6 +50,7 @@ function buildPreview(events, contacts) {
 }
 
 export default async function handler(req, res) {
+  if (!await verifyAuth(req)) return res.status(401).json({ error: "Unauthorized" });
   const accessToken = await getValidAccessToken();
   if (!accessToken) return res.status(401).json({ error: "not_connected" });
 

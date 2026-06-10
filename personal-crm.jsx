@@ -80,6 +80,53 @@ const CSS = `
     transition: opacity 0.15s;
   }
   .nav-add:hover { opacity: 0.88; }
+  .btn-logout { background: none; border: 1px solid var(--border-strong); color: var(--text-muted); border-radius: 8px; padding: 6px 12px; font-size: 12.5px; font-weight: 500; font-family: 'Inter', sans-serif; cursor: pointer; transition: all 0.15s; }
+  .btn-logout:hover { background: var(--bg); color: var(--text); }
+  .gear-wrap { position: relative; }
+  .gear-btn { background: none; border: 1px solid var(--border-strong); color: var(--text-muted); border-radius: 8px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; font-size: 15px; }
+  .gear-btn:hover { background: var(--bg); color: var(--text); }
+  .gear-menu { position: absolute; top: calc(100% + 6px); right: 0; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: var(--shadow-lg); min-width: 248px; z-index: 200; padding: 6px 0; }
+  .gear-section { padding: 8px 14px 3px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-subtle); }
+  .gear-export-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 14px; gap: 10px; }
+  .gear-export-label { font-size: 13px; color: var(--text); font-family: 'Inter', sans-serif; flex-shrink: 0; }
+  .gear-formats { display: flex; gap: 4px; }
+  .gear-fmt-btn { background: var(--bg); border: 1px solid var(--border-strong); color: var(--text-muted); border-radius: 5px; padding: 2px 8px; font-size: 11.5px; font-weight: 500; font-family: 'Inter', sans-serif; cursor: pointer; transition: all 0.12s; }
+  .gear-fmt-btn:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .gear-divider { height: 1px; background: var(--border); margin: 4px 0; }
+  .gear-menu-btn { width: 100%; text-align: left; background: none; border: none; padding: 8px 14px; font-size: 13px; color: var(--text); font-family: 'Inter', sans-serif; cursor: pointer; transition: background 0.12s; }
+  .gear-menu-btn:hover { background: var(--bg); }
+  .gear-menu-btn.signout { color: var(--text-muted); }
+  .gear-menu-btn.signout:hover { color: var(--warn); background: var(--bg); }
+
+  /* SELECT MODE */
+  .select-header { display: flex; align-items: center; gap: 10px; padding: 10px 0 14px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  .select-all-box { width: 18px; height: 18px; border-radius: 5px; border: 2px solid var(--border-strong); background: var(--surface); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.12s; }
+  .select-all-box.checked { background: var(--accent); border-color: var(--accent); }
+  .select-all-box.indeterminate { background: var(--accent-soft); border-color: var(--accent); }
+  .contact-card.selected { border-color: var(--accent); background: var(--accent-soft); }
+  .card-checkbox { position: absolute; top: 12px; left: 12px; width: 18px; height: 18px; border-radius: 5px; border: 2px solid var(--border-strong); background: var(--surface); display: flex; align-items: center; justify-content: center; font-size: 11px; color: #fff; font-weight: 700; transition: all 0.12s; pointer-events: none; }
+  .card-checkbox.checked { background: var(--accent); border-color: var(--accent); }
+  .select-bar { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: var(--ink); border-radius: 12px; padding: 10px 14px; display: flex; align-items: center; gap: 8px; box-shadow: var(--shadow-lg); z-index: 150; white-space: nowrap; }
+  .select-bar-count { font-size: 13px; font-weight: 600; color: #fff; padding-right: 10px; border-right: 1px solid rgba(255,255,255,0.18); margin-right: 2px; }
+  .sel-action { background: rgba(255,255,255,0.10); border: none; color: #fff; border-radius: 7px; padding: 5px 11px; font-size: 12.5px; font-weight: 500; cursor: pointer; font-family: 'Inter', sans-serif; transition: background 0.12s; }
+  .sel-action:hover { background: rgba(255,255,255,0.2); }
+  .sel-action.danger { color: #ff8c7a; }
+  .sel-action.danger:hover { background: rgba(200,70,50,0.3); }
+  .sel-cancel { background: none; border: none; color: rgba(255,255,255,0.55); font-size: 12.5px; cursor: pointer; font-family: 'Inter', sans-serif; padding: 5px 6px; transition: color 0.12s; }
+  .sel-cancel:hover { color: #fff; }
+
+  /* LOGIN */
+  .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg); }
+  .login-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 40px 36px; width: 100%; max-width: 380px; text-align: center; box-shadow: var(--shadow-lg); }
+  .login-brand { font-size: 22px; font-weight: 600; color: var(--text); letter-spacing: -0.3px; margin-bottom: 6px; font-family: 'Inter', sans-serif; }
+  .login-brand span { color: var(--terracotta); }
+  .login-sub { font-size: 13.5px; color: var(--text-muted); margin-bottom: 28px; }
+  .login-input { width: 100%; padding: 10px 14px; border: 1px solid var(--border-strong); border-radius: 8px; font-size: 14px; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); outline: none; transition: border-color 0.15s; margin-bottom: 12px; }
+  .login-input:focus { border-color: var(--accent); }
+  .login-btn { width: 100%; padding: 10px; background: var(--accent); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; font-family: 'Inter', sans-serif; cursor: pointer; transition: opacity 0.15s; }
+  .login-btn:hover { opacity: 0.88; }
+  .login-btn:disabled { opacity: 0.5; cursor: default; }
+  .login-sent { font-size: 13.5px; color: var(--accent); margin-top: 14px; }
 
   /* MAIN */
   .main { flex: 1; padding: 28px 24px; max-width: 1100px; margin: 0 auto; width: 100%; }
@@ -210,6 +257,8 @@ const CSS = `
   .profile-actions { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
   .btn-secondary { background: var(--bg); border: 1px solid var(--border-strong); color: var(--text); padding: 7px 14px; border-radius: 8px; font-size: 13px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 500; transition: all 0.15s; }
   .btn-secondary:hover { background: var(--border); }
+  .btn-danger { background: var(--warn); border: none; color: #fff; padding: 7px 14px; border-radius: 8px; font-size: 13px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 500; transition: opacity 0.15s; }
+  .btn-danger:hover { opacity: 0.88; }
   .btn-primary { background: var(--accent); border: none; color: #fff; padding: 7px 16px; border-radius: 8px; font-size: 13px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 500; transition: opacity 0.15s; }
   .btn-primary:hover { opacity: 0.88; }
 
@@ -421,18 +470,10 @@ Return JSON with this exact structure:
 
 Keep each item short (under 8 words). If nothing fits a category, return an empty array.`;
 
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetch("/api/ai", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      max_tokens: 1000,
-      messages: [{ role: "user", content: prompt }]
-    })
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages: [{ role: "user", content: prompt }], max_tokens: 1000 }),
   });
   const data = await response.json();
   const text = data.choices?.[0]?.message?.content || "{}";
@@ -457,18 +498,10 @@ Return ONLY valid JSON with no markdown, no extra text:
   "message": "A warm, natural draft message to send to ${contactName} (2-4 sentences, casual and genuine, references something specific from the note, no subject line)"
 }`;
 
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetch("/api/ai", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      max_tokens: 1000,
-      messages: [{ role: "user", content: prompt }]
-    })
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages: [{ role: "user", content: prompt }], max_tokens: 1000 }),
   });
   const data = await response.json();
   const text = data.choices?.[0]?.message?.content || "{}";
@@ -478,7 +511,94 @@ Return ONLY valid JSON with no markdown, no extra text:
     return { action: "", message: "" };
   }
 }
+// ── EXPORT ───────────────────────────────────────────────────────────────────
+function downloadFile(content, filename, mime) {
+  const url = URL.createObjectURL(new Blob([content], { type: mime }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: filename });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportJSON(contacts, label) {
+  const date = new Date().toISOString().slice(0, 10);
+  downloadFile(JSON.stringify(contacts, null, 2), `crm-${label}-${date}.json`, "application/json");
+}
+
+function exportCSV(contacts, label) {
+  const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const headers = ["name","categories","role","company","location","phone","email","linkedin","instagram","birthday","lastContact","lastUpdateDate","lastUpdateText","bio","notes","tags","followUpDate","followUpNote"];
+  const rows = contacts.map(c => [
+    c.name, getCategories(c).join(";"), c.role, c.company, c.location,
+    c.phone, c.email, c.linkedin, c.instagram, c.birthday, c.lastContact,
+    c.updates?.[0]?.date, c.updates?.[0]?.text,
+    c.bio, c.notes, c.tags?.join(";"), c.followUp?.date, c.followUp?.note,
+  ].map(esc).join(","));
+  const date = new Date().toISOString().slice(0, 10);
+  downloadFile([headers.map(esc).join(","), ...rows].join("\n"), `crm-${label}-${date}.csv`, "text/csv;charset=utf-8");
+}
+
+function exportVCard(contacts, label) {
+  const lines = contacts.flatMap(c => {
+    const v = [];
+    v.push("BEGIN:VCARD", "VERSION:3.0");
+    v.push(`FN:${c.name || ""}`);
+    v.push(`N:${c.name || ""};;;;`);
+    if (c.company) v.push(`ORG:${c.company}`);
+    if (c.role) v.push(`TITLE:${c.role}`);
+    if (c.phone) v.push(`TEL:${c.phone}`);
+    if (c.email) v.push(`EMAIL:${c.email}`);
+    if (c.birthday) {
+      const bday = c.birthday.startsWith("--") ? `1604${c.birthday.slice(1)}` : c.birthday;
+      v.push(`BDAY:${bday}`);
+    }
+    if (c.linkedin) v.push(`URL:https://linkedin.com/in/${c.linkedin}`);
+    const cats = getCategories(c);
+    if (cats.length) v.push(`CATEGORIES:${cats.join(",")}`);
+    const notes = [c.bio, c.instagram ? `Instagram: @${c.instagram}` : null, c.location ? `Location: ${c.location}` : null, c.updates?.[0] ? `Last contact (${c.updates[0].date}): ${c.updates[0].text}` : null].filter(Boolean);
+    if (notes.length) v.push(`NOTE:${notes.join("\\n")}`);
+    v.push("END:VCARD");
+    return v;
+  });
+  const date = new Date().toISOString().slice(0, 10);
+  downloadFile(lines.join("\r\n"), `crm-${label}-${date}.vcf`, "text/vcard;charset=utf-8");
+}
+
+function LoginScreen() {
+  const [email, setEmail] = useState("patrick.chung2003@gmail.com");
+  const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  async function handleSend(e) {
+    e.preventDefault();
+    setSending(true);
+    await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin } });
+    setSent(true);
+    setSending(false);
+  }
+
+  return (
+    <>
+      <style>{CSS}</style>
+      <div className="login-wrap">
+        <div className="login-card">
+          <div className="login-brand">people<span>.</span>crm</div>
+          <div className="login-sub">Your personal relationship manager</div>
+          {sent ? (
+            <div className="login-sent">Magic link sent — check your inbox.</div>
+          ) : (
+            <form onSubmit={handleSend}>
+              <input className="login-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" />
+              <button className="login-btn" type="submit" disabled={sending}>{sending ? "Sending…" : "Send magic link"}</button>
+            </form>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function App() {
+  const [session, setSession] = useState(undefined);
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("dashboard");
@@ -488,12 +608,31 @@ export default function App() {
   const [filterCats, setFilterCats] = useState([]);
   const [, setTick] = useState(0);
 
+  const [showGear, setShowGear] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const gearRef = useRef(null);
   const syncTimers = useRef({});
+  const contactsLoaded = useRef(false);
 
   useEffect(() => {
     const id = setInterval(() => setTick(t => t + 1), 60000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session));
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!showGear) return;
+    function handleClick(e) { if (gearRef.current && !gearRef.current.contains(e.target)) setShowGear(false); }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showGear]);
 
   function syncContact(contact) {
     clearTimeout(syncTimers.current[contact.id]);
@@ -504,8 +643,17 @@ export default function App() {
     }, 600);
   }
 
-  // Load from Supabase on mount + lazy migrations
+  // Save intended contact to sessionStorage when not logged in
   useEffect(() => {
+    if (session !== null) return;
+    const id = new URLSearchParams(window.location.search).get("contact");
+    if (id) sessionStorage.setItem("pendingContact", id);
+  }, [session]);
+
+  // Load from Supabase once session is established
+  useEffect(() => {
+    if (!session || contactsLoaded.current) return;
+    contactsLoaded.current = true;
     supabase.from("contacts").select("data").then(({ data, error }) => {
       if (!error) {
         const loaded = data.map(r => r.data);
@@ -524,14 +672,21 @@ export default function App() {
           return contact;
         });
         setContacts(migrated);
-        // Sync contacts that changed during migration
-        migrated.forEach((c, i) => {
-          if (c !== loaded[i]) syncContact(c);
-        });
+        migrated.forEach((c, i) => { if (c !== loaded[i]) syncContact(c); });
+
+        // URL routing: open contact from email link or post-login redirect
+        const pending = sessionStorage.getItem("pendingContact");
+        const urlId = new URLSearchParams(window.location.search).get("contact");
+        const targetId = pending || urlId;
+        if (targetId) {
+          sessionStorage.removeItem("pendingContact");
+          setSelectedId(targetId);
+          setView("profile");
+        }
       }
       setLoading(false);
     });
-  }, []);
+  }, [session]);
 
   const selected = contacts.find(c => c.id === selectedId);
 
@@ -541,6 +696,25 @@ export default function App() {
     supabase.from("contacts").delete().eq("id", id).then(({ error }) => {
       if (error) console.error("[CRM] delete failed:", id, error.message);
     });
+  }
+
+  function enterSelectMode() {
+    setSelectMode(true);
+    setSelectedIds(new Set());
+    setShowGear(false);
+    if (view !== "contacts") setView("contacts");
+  }
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }
+  function toggleSelectId(id) {
+    setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  }
+  function bulkDelete() {
+    selectedIds.forEach(id => deleteContact(id));
+    setShowBulkDeleteConfirm(false);
+    exitSelectMode();
   }
 
   function handleReachedOut(id) {
@@ -589,6 +763,25 @@ export default function App() {
     .filter(c => c.drift.isDrifting)
     .sort((a, b) => (b.drift.daysSince / b.drift.threshold) - (a.drift.daysSince / a.drift.threshold));
 
+  const hasActiveFilter = filterCats.length > 0 || search.length > 0;
+  const filteredForExport = hasActiveFilter ? contacts.filter(c => {
+    const q = search.toLowerCase();
+    const matchSearch = !q || c.name?.toLowerCase().includes(q) || c.role?.toLowerCase().includes(q) || c.tags?.some(t => t.toLowerCase().includes(q));
+    const matchCat = filterCats.length === 0 || filterCats.every(fc => getCategories(c).includes(fc));
+    return matchSearch && matchCat;
+  }) : [];
+
+  if (session === undefined) return (
+    <>
+      <style>{CSS}</style>
+      <div className="app" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
+        <div style={{ fontFamily: "'Inter', system-ui, sans-serif", fontSize: 18, color: "var(--text-subtle)" }}>Loading…</div>
+      </div>
+    </>
+  );
+
+  if (!session) return <LoginScreen />;
+
   if (loading) return (
     <>
       <style>{CSS}</style>
@@ -608,7 +801,39 @@ export default function App() {
             <button className={`nav-tab ${view === "dashboard" ? "active" : ""}`} onClick={() => setView("dashboard")}>Dashboard</button>
             <button className={`nav-tab ${view === "contacts" || view === "profile" ? "active" : ""}`} onClick={() => setView("contacts")}>Contacts</button>
           </div>
-          <button className="nav-add" onClick={() => setShowAddModal(true)}>+ New contact</button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button className="nav-add" onClick={() => setShowAddModal(true)}>+ New contact</button>
+            <div className="gear-wrap" ref={gearRef}>
+              <button className="gear-btn" onClick={() => setShowGear(v => !v)} title="Settings">⚙</button>
+              {showGear && (
+                <div className="gear-menu">
+                  <div className="gear-section">Export</div>
+                  <div className="gear-export-row">
+                    <span className="gear-export-label">All ({contacts.length})</span>
+                    <div className="gear-formats">
+                      {["JSON","CSV","vCard"].map(fmt => (
+                        <button key={fmt} className="gear-fmt-btn" onClick={() => { setShowGear(false); fmt === "JSON" ? exportJSON(contacts, "all") : fmt === "CSV" ? exportCSV(contacts, "all") : exportVCard(contacts, "all"); }}>{fmt}</button>
+                      ))}
+                    </div>
+                  </div>
+                  {hasActiveFilter && (
+                    <div className="gear-export-row">
+                      <span className="gear-export-label">Filtered ({filteredForExport.length})</span>
+                      <div className="gear-formats">
+                        {["JSON","CSV","vCard"].map(fmt => (
+                          <button key={fmt} className="gear-fmt-btn" onClick={() => { setShowGear(false); fmt === "JSON" ? exportJSON(filteredForExport, "filtered") : fmt === "CSV" ? exportCSV(filteredForExport, "filtered") : exportVCard(filteredForExport, "filtered"); }}>{fmt}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="gear-divider" />
+                  <button className="gear-menu-btn" onClick={enterSelectMode}>Select contacts…</button>
+                  <div className="gear-divider" />
+                  <button className="gear-menu-btn signout" onClick={() => supabase.auth.signOut()}>Sign out</button>
+                </div>
+              )}
+            </div>
+          </div>
         </nav>
 
         <main className="main">
@@ -628,6 +853,10 @@ export default function App() {
               search={search} setSearch={setSearch}
               filterCats={filterCats} setFilterCats={setFilterCats}
               onOpenProfile={openProfile}
+              selectMode={selectMode}
+              selectedIds={selectedIds}
+              onToggleSelect={toggleSelectId}
+              onSelectAll={ids => setSelectedIds(new Set(ids))}
             />
           )}
           {view === "profile" && selected && (
@@ -643,6 +872,37 @@ export default function App() {
 
         {showAddModal && (
           <AddContactModal onClose={() => setShowAddModal(false)} onAdd={addContact} />
+        )}
+
+        {selectMode && (
+          <div className="select-bar">
+            <span className="select-bar-count">{selectedIds.size > 0 ? `${selectedIds.size} selected` : "Select mode"}</span>
+            {selectedIds.size > 0 && (() => {
+              const sel = contacts.filter(c => selectedIds.has(c.id));
+              return <>
+                {["JSON","CSV","vCard"].map(fmt => (
+                  <button key={fmt} className="sel-action" onClick={() => { fmt === "JSON" ? exportJSON(sel, "selected") : fmt === "CSV" ? exportCSV(sel, "selected") : exportVCard(sel, "selected"); }}>
+                    {fmt}
+                  </button>
+                ))}
+                <button className="sel-action danger" onClick={() => setShowBulkDeleteConfirm(true)}>Delete</button>
+              </>;
+            })()}
+            <button className="sel-cancel" onClick={exitSelectMode}>✕ Cancel</button>
+          </div>
+        )}
+
+        {showBulkDeleteConfirm && (
+          <div className="modal-overlay" onClick={() => setShowBulkDeleteConfirm(false)}>
+            <div className="modal" style={{ maxWidth: 360 }} onClick={e => e.stopPropagation()}>
+              <div className="modal-title" style={{ fontSize: 17 }}>Delete {selectedIds.size} contacts?</div>
+              <p style={{ fontSize: 13.5, color: "var(--text-muted)", lineHeight: 1.6 }}>This cannot be undone. All data including updates and follow-ups will be permanently deleted.</p>
+              <div className="modal-footer">
+                <button className="btn-secondary" onClick={() => setShowBulkDeleteConfirm(false)}>Cancel</button>
+                <button className="btn-danger" onClick={bulkDelete}>Delete</button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </>
@@ -864,7 +1124,7 @@ const CATEGORIES = [
   { value: "family", label: "Family" },
 ];
 
-function ContactsList({ contacts, search, setSearch, filterCats, setFilterCats, onOpenProfile }) {
+function ContactsList({ contacts, search, setSearch, filterCats, setFilterCats, onOpenProfile, selectMode, selectedIds, onToggleSelect, onSelectAll }) {
   function toggleCat(val) {
     setFilterCats(prev => prev.includes(val) ? prev.filter(c => c !== val) : [...prev, val]);
   }
@@ -875,6 +1135,16 @@ function ContactsList({ contacts, search, setSearch, filterCats, setFilterCats, 
     const matchCat = filterCats.length === 0 || filterCats.every(fc => getCategories(c).includes(fc));
     return matchSearch && matchCat;
   });
+
+  const filteredIds = filtered.map(c => c.id);
+  const allSelected = filteredIds.length > 0 && filteredIds.every(id => selectedIds.has(id));
+  const someSelected = filteredIds.some(id => selectedIds.has(id));
+
+  function handleSelectAll() {
+    if (allSelected) onSelectAll([]);
+    else onSelectAll(filteredIds);
+  }
+
   return (
     <>
       <div style={{ marginBottom: 20 }}>
@@ -902,6 +1172,17 @@ function ContactsList({ contacts, search, setSearch, filterCats, setFilterCats, 
           );
         })}
       </div>
+      {selectMode && (
+        <div className="select-header">
+          <div className={`select-all-box ${allSelected ? "checked" : someSelected ? "indeterminate" : ""}`} onClick={handleSelectAll}>
+            {allSelected && <span style={{ color: "#fff", fontSize: 11, fontWeight: 700 }}>✓</span>}
+            {!allSelected && someSelected && <span style={{ color: "var(--accent)", fontSize: 11, fontWeight: 700 }}>—</span>}
+          </div>
+          <span style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Inter', sans-serif" }}>
+            {allSelected ? `All ${filteredIds.length} selected` : someSelected ? `${filteredIds.filter(id => selectedIds.has(id)).length} of ${filteredIds.length} selected` : "Click to select"}
+          </span>
+        </div>
+      )}
       {filtered.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-title">No contacts found</div>
@@ -909,7 +1190,14 @@ function ContactsList({ contacts, search, setSearch, filterCats, setFilterCats, 
         </div>
       ) : (
         <div className="contacts-grid">
-          {filtered.map(c => <ContactCard key={c.id} contact={c} onClick={() => onOpenProfile(c.id)} />)}
+          {filtered.map(c => (
+            <ContactCard
+              key={c.id} contact={c}
+              onClick={() => selectMode ? onToggleSelect(c.id) : onOpenProfile(c.id)}
+              selectMode={selectMode}
+              isSelected={selectedIds.has(c.id)}
+            />
+          ))}
         </div>
       )}
     </>
@@ -917,10 +1205,15 @@ function ContactsList({ contacts, search, setSearch, filterCats, setFilterCats, 
 }
 
 // ── CONTACT CARD ──────────────────────────────────────────────────────────────
-function ContactCard({ contact: c, onClick }) {
+function ContactCard({ contact: c, onClick, selectMode, isSelected }) {
   return (
-    <div className="contact-card" onClick={onClick}>
-      <div className="contact-card-top">
+    <div className={`contact-card${isSelected ? " selected" : ""}`} onClick={onClick} style={selectMode ? { cursor: "pointer", position: "relative" } : { position: "relative" }}>
+      {selectMode && (
+        <div className={`card-checkbox${isSelected ? " checked" : ""}`}>
+          {isSelected && "✓"}
+        </div>
+      )}
+      <div className="contact-card-top" style={selectMode ? { paddingLeft: 28 } : {}}>
         <Avatar contact={c} size={46} />
         <div className="contact-card-info">
           <div className="contact-name">{c.name}</div>

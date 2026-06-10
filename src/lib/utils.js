@@ -4,6 +4,34 @@ export const RELATIONSHIP_CADENCE = {
 
 export const RELATIONSHIPS = ["Friend", "Family", "School", "Colleague", "Network", "Mentor", "Collaborator"];
 
+export const TIER_CADENCE = { 1: 30, 2: 60, 3: 90, 4: 180 };
+
+export const TIER_COLORS = {
+  1: { bg: "#FEF3CD", text: "#B07700", border: "#B07700" },
+  2: { bg: "#EFF4FD", text: "#3B6FD4", border: "#3B6FD4" },
+  3: { bg: "#EAF3EC", text: "#2A8C5E", border: "#2A8C5E" },
+  4: { bg: "#F3F3F3", text: "#888888", border: "#AAAAAA" },
+};
+
+export const TAG_NAMESPACES = ["industry", "context", "project", "location"];
+
+export function parseTag(tag) {
+  const idx = tag.indexOf(":");
+  if (idx === -1) return { namespace: null, value: tag };
+  return { namespace: tag.slice(0, idx), value: tag.slice(idx + 1) };
+}
+
+export function groupTags(tags) {
+  const general = [];
+  const structured = {};
+  for (const tag of (tags || [])) {
+    const { namespace, value } = parseTag(tag);
+    if (!namespace) { general.push(tag); }
+    else { (structured[namespace] = structured[namespace] || []).push({ tag, value }); }
+  }
+  return { general, structured };
+}
+
 export const INTERACTION_TYPES = [
   { value: "coffee",  label: "Coffee",  emoji: "☕" },
   { value: "call",    label: "Call",    emoji: "📞" },
@@ -24,11 +52,9 @@ export function computeCadence(relationships) {
   return Math.min(...relationships.map(r => RELATIONSHIP_CADENCE[r] ?? 90));
 }
 
-// strength = 1.0 (just contacted) → 0.0 (at cadence threshold) → negative (overdue)
-// clamped to [0, 1] for display
 export function computeStrength(contact) {
   if (!contact.last_contact) return 0.5;
-  const cadence = contact.cadence || computeCadence(contact.relationship);
+  const cadence = TIER_CADENCE[contact.tier] || 90;
   const ds = Math.floor((Date.now() - new Date(contact.last_contact)) / 86400000);
   return Math.max(0, Math.min(1, 1 - ds / cadence));
 }

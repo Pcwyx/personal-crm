@@ -1,15 +1,18 @@
 import { useState } from "react";
-import { RELATIONSHIPS, computeCadence, avatarColor, avatarInitials, followUpDaysPreset } from "../lib/utils.js";
+import { RELATIONSHIPS, TIER_COLORS, TAG_NAMESPACES, avatarColor, avatarInitials, followUpDaysPreset } from "../lib/utils.js";
 
 export default function AddContactModal({ onClose, onAdd }) {
   const [form, setForm] = useState({
     name: "", role: "", company: "", email: "", phone: "",
     linkedin: "", twitter: "", instagram: "",
     birthday: "", location: "",
-    relationship: [], tags: [], notes: "",
+    relationship: [], tier: 3, tags: [], notes: "",
     followUpPreset: "",
   });
-  const [tagInput, setTagInput] = useState("");
+  const [tagDraft, setTagDraft] = useState("");
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
+  const [tagPickerNs, setTagPickerNs] = useState("");
+  const [tagPickerVal, setTagPickerVal] = useState("");
   const [saving, setSaving] = useState(false);
 
   function set(key, val) { setForm(f => ({ ...f, [key]: val })); }
@@ -24,15 +27,20 @@ export default function AddContactModal({ onClose, onAdd }) {
   function addTag(raw) {
     const tag = raw.trim().toLowerCase().replace(/,/g, "");
     if (tag && !form.tags.includes(tag)) set("tags", [...form.tags, tag]);
-    setTagInput("");
+    setTagDraft("");
+  }
+
+  function addStructuredTag() {
+    const tag = tagPickerNs
+      ? `${tagPickerNs}:${tagPickerVal.trim().toLowerCase()}`
+      : tagPickerVal.trim().toLowerCase();
+    if (tag && tag !== ":" && !form.tags.includes(tag)) set("tags", [...form.tags, tag]);
+    setTagPickerNs("");
+    setTagPickerVal("");
+    setTagPickerOpen(false);
   }
 
   function removeTag(t) { set("tags", form.tags.filter(x => x !== t)); }
-
-  function handleTagKey(e) {
-    if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTag(tagInput); }
-    if (e.key === "Backspace" && !tagInput && form.tags.length) removeTag(form.tags[form.tags.length - 1]);
-  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -55,7 +63,7 @@ export default function AddContactModal({ onClose, onAdd }) {
       birthday: form.birthday || null,
       location: form.location || null,
       relationship: form.relationship,
-      cadence: computeCadence(form.relationship),
+      tier: form.tier,
       tags: form.tags,
       notes: form.notes || null,
       bio: null, photo: null,
@@ -66,8 +74,11 @@ export default function AddContactModal({ onClose, onAdd }) {
       important_dates: [],
     };
 
-    await onAdd(data);
-    setSaving(false);
+    try {
+      await onAdd(data);
+    } finally {
+      setSaving(false);
+    }
   }
 
   const initials = avatarInitials(form.name || "?");
@@ -162,22 +173,108 @@ export default function AddContactModal({ onClose, onAdd }) {
           </div>
 
           <div className="form-row">
+            <label className="form-label">Priority Tier</label>
+            <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+              {[1, 2, 3, 4].map(t => {
+                const col = TIER_COLORS[t];
+                const active = form.tier === t;
+                return (
+                  <button key={t} type="button"
+                    onClick={() => set("tier", t)}
+                    style={{
+                      padding: "5px 14px", borderRadius: 6, fontSize: 13, fontWeight: 700,
+                      border: `1.5px solid ${active ? col.border : "var(--border)"}`,
+                      background: active ? col.bg : "none",
+                      color: active ? col.text : "var(--ink-mid)",
+                      cursor: "pointer",
+                    }}
+                  >T{t}</button>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--ink-faint)", marginTop: 4 }}>
+              T1 = 30d · T2 = 60d · T3 = 90d · T4 = 180d
+            </div>
+          </div>
+
+          <div className="form-row">
             <label className="form-label">Tags</label>
             <div className="tag-input-wrap">
-              {form.tags.map(t => (
-                <span key={t} className="tag-chip">
-                  {t} <button type="button" className="tag-rm" onClick={() => removeTag(t)}>×</button>
-                </span>
-              ))}
+              {form.tags.map(t => {
+                const isStructured = t.includes(":");
+                const [ns, val] = isStructured ? t.split(/:(.+)/) : [null, t];
+                return (
+                  <span key={t} className={`tag-chip${isStructured ? " structured" : ""}`}>
+                    {isStructured && <span className="tag-ns">{ns}:</span>}{isStructured ? val : t}
+                    <button type="button" className="tag-rm" onClick={() => removeTag(t)}>×</button>
+                  </span>
+                );
+              })}
               <input
                 className="tag-input"
                 placeholder="Add tag…"
-                value={tagInput}
-                onChange={e => setTagInput(e.target.value)}
-                onKeyDown={handleTagKey}
-                onBlur={() => tagInput && addTag(tagInput)}
+                value={tagDraft}
+                onChange={e => setTagDraft(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTag(tagDraft); }
+                  if (e.key === "Backspace" && !tagDraft && form.tags.length) removeTag(form.tags[form.tags.length - 1]);
+                }}
+                onBlur={() => tagDraft && addTag(tagDraft)}
               />
+              <button
+                type="button"
+                onClick={() => setTagPickerOpen(v => !v)}
+                style={{ fontSize: 16, color: "var(--acc)", background: "none", border: "none", cursor: "pointer", padding: "0 2px", lineHeight: 1 }}
+                title="Add structured tag"
+              >＋</button>
             </div>
+            {tagPickerOpen && (
+              <div style={{
+                marginTop: 8, padding: "10px 12px",
+                background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8,
+                display: "flex", flexDirection: "column", gap: 8,
+              }}>
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                  {TAG_NAMESPACES.map(ns => (
+                    <button key={ns} type="button"
+                      onClick={() => setTagPickerNs(tagPickerNs === ns ? "" : ns)}
+                      style={{
+                        padding: "3px 8px", borderRadius: 5, fontSize: 11.5, cursor: "pointer",
+                        border: "1px solid var(--border)",
+                        background: tagPickerNs === ns ? "var(--acc-pale)" : "none",
+                        color: tagPickerNs === ns ? "var(--acc)" : "var(--ink-mid)",
+                      }}
+                    >{ns}</button>
+                  ))}
+                  <button type="button"
+                    onClick={() => setTagPickerNs("")}
+                    style={{
+                      padding: "3px 8px", borderRadius: 5, fontSize: 11.5, cursor: "pointer",
+                      border: "1px solid var(--border)",
+                      background: tagPickerNs === "" ? "var(--acc-pale)" : "none",
+                      color: tagPickerNs === "" ? "var(--acc)" : "var(--ink-faint)",
+                    }}
+                  >general</button>
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  {tagPickerNs && <span style={{ fontSize: 12, color: "var(--ink-mid)", fontWeight: 600, whiteSpace: "nowrap" }}>{tagPickerNs}:</span>}
+                  <input
+                    className="form-input"
+                    style={{ flex: 1, fontSize: 13 }}
+                    placeholder={tagPickerNs ? `e.g. "tech"` : "tag value"}
+                    value={tagPickerVal}
+                    onChange={e => setTagPickerVal(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addStructuredTag(); } if (e.key === "Escape") setTagPickerOpen(false); }}
+                    autoFocus
+                  />
+                  <button type="button" className="btn-primary"
+                    style={{ fontSize: 12, padding: "5px 10px" }}
+                    onClick={addStructuredTag}
+                    disabled={!tagPickerVal.trim()}
+                  >Add</button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="form-row">
