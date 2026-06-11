@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { authFetch } from "../supabase.js";
+import { callAI } from "../lib/ai.js";
 import {
   computeStrength, strengthColor, strengthLabel,
   formatBirthday, formatDate, formatRelative,
@@ -61,15 +61,7 @@ Return ONLY valid JSON, no markdown:
 {"action": "A short specific action to take (under 12 words, starts with a verb)", "message": "A warm natural draft message to send (2-4 sentences, casual and genuine)"}`;
 
     try {
-      const res = await authFetch("/api/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: [{ role: "user", content: prompt }], max_tokens: 500 }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const text = data.choices?.[0]?.message?.content || "{}";
-      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      const parsed = await callAI([{ role: "user", content: prompt }], 500);
       setAiResult(parsed);
       setAiState("done");
     } catch {
@@ -96,15 +88,7 @@ ${recent || "None recorded"}
 Return ONLY valid JSON, no markdown:
 {"lastMeeting": "One sentence about the most recent interaction, or null", "background": "2-3 key things to remember about this person in one short paragraph", "topics": ["specific talking point 1", "specific talking point 2", "specific talking point 3"]}`;
     try {
-      const res = await authFetch("/api/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: [{ role: "user", content: prompt }], max_tokens: 600 }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const text = data.choices?.[0]?.message?.content || "{}";
-      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      const parsed = await callAI([{ role: "user", content: prompt }], 600);
       setPrepResult(parsed);
       setPrepState("done");
     } catch {

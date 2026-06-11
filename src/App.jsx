@@ -104,13 +104,15 @@ export default function App() {
     if (id) sessionStorage.setItem("pendingContact", id);
   }, [session]);
 
-  // Load contacts once session established
+  // Load contacts once session established — two-phase for fast first paint:
+  // contacts render immediately, interactions merge in from a background query
   useEffect(() => {
     if (!session || loadedRef.current) return;
     loadedRef.current = true;
-    supabase.from("contacts").select("*, interactions(*)").then(({ data, error }) => {
+    (async () => {
+      const { data, error } = await supabase.from("contacts").select("*");
       if (!error && data) {
-        setContacts(data);
+        setContacts(data.map(c => ({ ...c, interactions: [] })));
         const pending = sessionStorage.getItem("pendingContact");
         const urlId = new URLSearchParams(window.location.search).get("contact");
         const targetId = pending || urlId;
@@ -120,7 +122,17 @@ export default function App() {
         }
       }
       setLoading(false);
-    });
+      if (error) return;
+      const { data: ints } = await supabase
+        .from("interactions")
+        .select("*")
+        .order("date", { ascending: false });
+      if (ints) {
+        const byContact = {};
+        for (const i of ints) (byContact[i.contact_id] ||= []).push(i);
+        setContacts(prev => prev.map(c => ({ ...c, interactions: byContact[c.id] || [] })));
+      }
+    })();
   }, [session]);
 
   // ── SYNC ────────────────────────────────────────────────────────────────────
