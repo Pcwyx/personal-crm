@@ -2,6 +2,20 @@ import { useState } from "react";
 import { birthdayDaysUntil, formatBirthday, TIER_CADENCE, daysSince } from "../lib/utils.js";
 import Avatar, { AvatarSimple } from "../components/Avatar.jsx";
 import DueBadge from "../components/DueBadge.jsx";
+import QuickCapture from "../components/QuickCapture.jsx";
+
+function RowAction({ label, title, onClick }) {
+  return (
+    <button
+      className="done-btn"
+      title={title}
+      style={{ flexShrink: 0, padding: "3px 8px", fontSize: 11.5 }}
+      onClick={e => { e.stopPropagation(); onClick(); }}
+    >
+      {label}
+    </button>
+  );
+}
 
 const PAGE = 5;
 
@@ -29,7 +43,7 @@ function CollapsibleSection({ label, items, renderRow }) {
   );
 }
 
-export default function HomeView({ contacts, onOpenDetail, today, needsAttentionCount }) {
+export default function HomeView({ contacts, onOpenDetail, today, needsAttentionCount, onQuickLog, onMarkDone, onSnooze, onCheckIn }) {
   const now = new Date();
   const hour = now.getHours();
   const greeting = hour < 12 ? "Good morning ☀️" : hour < 17 ? "Good afternoon 🌤" : "Good evening 🌙";
@@ -68,6 +82,8 @@ export default function HomeView({ contacts, onOpenDetail, today, needsAttention
           Here's your week
         </p>
       </div>
+
+      <QuickCapture contacts={contacts} onLog={onQuickLog} />
 
       <div className="stats-strip" style={{ marginBottom: 28 }}>
         <div className="stat-card">
@@ -127,6 +143,8 @@ export default function HomeView({ contacts, onOpenDetail, today, needsAttention
                     )}
                   </div>
                   <DueBadge date={c.next_follow_up} threshold={365} />
+                  <RowAction label="⏰+1w" title="Snooze 1 week" onClick={() => onSnooze(c.id, 7)} />
+                  <RowAction label="✓" title="Mark done" onClick={() => onMarkDone(c.id)} />
                 </div>
               )}
             />
@@ -150,6 +168,7 @@ export default function HomeView({ contacts, onOpenDetail, today, needsAttention
                     <span style={{ fontSize: 12, color: "var(--ink-faint)", flexShrink: 0 }}>
                       {ds !== null ? `${ds}d ago` : "No contact"}
                     </span>
+                    <RowAction label="✓ 已聯絡" title="Log a quick check-in today" onClick={() => onCheckIn(c.id)} />
                   </div>
                 );
               }}

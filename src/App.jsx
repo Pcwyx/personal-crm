@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase, authFetch } from "./supabase.js";
-import { computeStrength, TIER_CADENCE, birthdayDaysUntil, todayISO, daysSince } from "./lib/utils.js";
+import { computeStrength, TIER_CADENCE, birthdayDaysUntil, todayISO, daysSince, addDaysISO } from "./lib/utils.js";
 import Sidebar from "./components/Sidebar.jsx";
 import BottomNav from "./components/BottomNav.jsx";
 import SpeedDial from "./components/SpeedDial.jsx";
@@ -302,6 +302,10 @@ export default function App() {
     setSelectedIds(new Set());
   }
 
+  function snoozeFollowUp(id, days) {
+    updateContact(id, { next_follow_up: addDaysISO(days) });
+  }
+
   // ── INTERACTIONS ─────────────────────────────────────────────────────────────
   async function addInteraction(contactId, { date, type, note }) {
     const { data: row, error } = await supabase
@@ -505,6 +509,13 @@ export default function App() {
               needsAttentionCount={needsAttentionCount}
               onAddContact={() => setShowAddContact(true)}
               onNavReminders={() => setActiveView("reminders")}
+              onQuickLog={addInteraction}
+              onMarkDone={(id) => {
+                updateContact(id, { next_follow_up: null, follow_up_note: null });
+                addInteraction(id, { date: today, type: "message", note: "Quick check-in" });
+              }}
+              onSnooze={snoozeFollowUp}
+              onCheckIn={(id) => addInteraction(id, { date: today, type: "message", note: "Quick check-in" })}
             />
           )}
           {activeView === "contacts" && (
@@ -533,6 +544,7 @@ export default function App() {
                 updateContact(id, { next_follow_up: null, follow_up_note: null });
                 addInteraction(id, { date: today, type: "message", note: "Quick check-in" });
               }}
+              onSnooze={snoozeFollowUp}
             />
           )}
         </div>

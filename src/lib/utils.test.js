@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   birthdayDaysUntil, computeStrength, computeCadence, daysSince, daysUntilDate,
-  parseTag, groupTags, followUpDaysPreset, avatarInitials, todayISO,
+  parseTag, groupTags, followUpDaysPreset, avatarInitials, todayISO, addDaysISO,
+  scoreNameMatch, findContactMatches,
   TIER_CADENCE,
 } from "./utils.js";
 
@@ -149,6 +150,54 @@ describe("followUpDaysPreset", () => {
   it("returns null for unknown preset", () => {
     expect(followUpDaysPreset("nope")).toBeNull();
     expect(followUpDaysPreset("")).toBeNull();
+  });
+});
+
+describe("name matching (quick capture)", () => {
+  const contacts = [
+    { id: "1", name: "王小明" },
+    { id: "2", name: "王小美" },
+    { id: "3", name: "Patrick Chung" },
+    { id: "4", name: "陳大文" },
+  ];
+
+  it("exact match scores 1", () => {
+    expect(scoreNameMatch("王小明", "王小明")).toBe(1);
+  });
+
+  it("substring match scores 0.85, case/space-insensitive", () => {
+    expect(scoreNameMatch("小明", "王小明")).toBe(0.85);
+    expect(scoreNameMatch("patrick", "Patrick Chung")).toBe(0.85);
+  });
+
+  it("empty input scores 0", () => {
+    expect(scoreNameMatch("", "王小明")).toBe(0);
+    expect(scoreNameMatch("x", "")).toBe(0);
+  });
+
+  it("findContactMatches ranks best first and caps at 5", () => {
+    const hits = findContactMatches("王小明", contacts);
+    expect(hits[0].contact.id).toBe("1");
+    expect(hits[0].score).toBe(1);
+  });
+
+  it("ambiguous query returns multiple candidates", () => {
+    const hits = findContactMatches("小", contacts);
+    expect(hits.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("no match below threshold", () => {
+    expect(findContactMatches("zzz", contacts)).toEqual([]);
+  });
+});
+
+describe("addDaysISO", () => {
+  it("adds days in local time", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 28, 12, 0, 0));
+    expect(addDaysISO(7)).toBe("2026-07-05");
+    expect(addDaysISO(0)).toBe("2026-06-28");
+    vi.useRealTimers();
   });
 });
 

@@ -169,3 +169,28 @@ export function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+
+export function addDaysISO(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export function scoreNameMatch(query, name) {
+  const a = (query || "").toLowerCase().replace(/\s+/g, "");
+  const b = (name || "").toLowerCase().replace(/\s+/g, "");
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (b.includes(a) || a.includes(b)) return 0.85;
+  let m = 0;
+  for (const ch of a) if (b.includes(ch)) m++;
+  return m / Math.max(a.length, b.length);
+}
+
+export function findContactMatches(query, contacts) {
+  return (contacts || [])
+    .map(c => ({ contact: c, score: scoreNameMatch(query, c.name) }))
+    .filter(x => x.score >= 0.5)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+}

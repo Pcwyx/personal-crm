@@ -2,7 +2,7 @@ import { daysUntilDate } from "../lib/utils.js";
 import Avatar, { AvatarSimple } from "../components/Avatar.jsx";
 import DueBadge from "../components/DueBadge.jsx";
 
-export default function RemindersView({ contacts, onOpenDetail, today, onMarkDone }) {
+export default function RemindersView({ contacts, onOpenDetail, today, onMarkDone, onSnooze }) {
   const overdue = contacts
     .filter(c => c.next_follow_up && c.next_follow_up < today)
     .sort((a, b) => a.next_follow_up.localeCompare(b.next_follow_up));
@@ -38,7 +38,7 @@ export default function RemindersView({ contacts, onOpenDetail, today, onMarkDon
                 </span>
               </div>
               <div className="section-card">
-                {overdue.map(c => <ReminderRow key={c.id} contact={c} onOpenDetail={onOpenDetail} onDone={() => onMarkDone(c.id)} />)}
+                {overdue.map(c => <ReminderRow key={c.id} contact={c} onOpenDetail={onOpenDetail} onDone={() => onMarkDone(c.id)} onSnooze={days => onSnooze(c.id, days)} />)}
               </div>
             </section>
           )}
@@ -47,7 +47,7 @@ export default function RemindersView({ contacts, onOpenDetail, today, onMarkDon
             <section>
               <div className="section-label">Upcoming</div>
               <div className="section-card">
-                {upcoming.map(c => <ReminderRow key={c.id} contact={c} onOpenDetail={onOpenDetail} onDone={() => onMarkDone(c.id)} />)}
+                {upcoming.map(c => <ReminderRow key={c.id} contact={c} onOpenDetail={onOpenDetail} onDone={() => onMarkDone(c.id)} onSnooze={days => onSnooze(c.id, days)} />)}
               </div>
             </section>
           )}
@@ -57,7 +57,7 @@ export default function RemindersView({ contacts, onOpenDetail, today, onMarkDon
   );
 }
 
-function ReminderRow({ contact: c, onOpenDetail, onDone }) {
+function ReminderRow({ contact: c, onOpenDetail, onDone, onSnooze }) {
   return (
     <div className="section-card-row" style={{ gap: 12 }}>
       <div onClick={() => onOpenDetail(c.id)} style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0, cursor: "pointer" }}>
@@ -73,6 +73,9 @@ function ReminderRow({ contact: c, onOpenDetail, onDone }) {
         </div>
         <DueBadge date={c.next_follow_up} threshold={365} />
       </div>
+      <button className="done-btn" title="Snooze 1 week" onClick={e => { e.stopPropagation(); onSnooze(7); }}>
+        ⏰ +1w
+      </button>
       <button className="done-btn" onClick={e => { e.stopPropagation(); onDone(); }}>
         ✓ Done
       </button>
