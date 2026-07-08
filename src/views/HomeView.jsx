@@ -43,7 +43,7 @@ function CollapsibleSection({ label, items, renderRow }) {
   );
 }
 
-export default function HomeView({ contacts, onOpenDetail, today, needsAttentionCount, onQuickLog, onMarkDone, onSnooze, onCheckIn }) {
+export default function HomeView({ contacts, onOpenDetail, today, needsAttentionCount, onQuickLog, onMarkDone, onSnooze, onCheckIn, onStartReview }) {
   const now = new Date();
   const hour = now.getHours();
   const greeting = hour < 12 ? "Good morning ☀️" : hour < 17 ? "Good afternoon 🌤" : "Good evening 🌙";
@@ -90,9 +90,17 @@ export default function HomeView({ contacts, onOpenDetail, today, needsAttention
           <div className="stat-number">{contacts.length}</div>
           <div className="stat-label">Total contacts</div>
         </div>
-        <div className="stat-card" style={{ borderColor: needsAttentionCount > 0 ? "var(--acc-light)" : undefined }}>
+        <div
+          className="stat-card"
+          style={{
+            borderColor: needsAttentionCount > 0 ? "var(--acc-light)" : undefined,
+            cursor: needsAttentionCount > 0 ? "pointer" : "default",
+          }}
+          onClick={() => needsAttentionCount > 0 && onStartReview()}
+          title={needsAttentionCount > 0 ? "開始每週回顧" : undefined}
+        >
           <div className="stat-number" style={{ color: needsAttentionCount > 0 ? "var(--red)" : "var(--green)" }}>{needsAttentionCount}</div>
-          <div className="stat-label">Needs attention</div>
+          <div className="stat-label">Needs attention{needsAttentionCount > 0 ? " · 回顧 →" : ""}</div>
         </div>
       </div>
 

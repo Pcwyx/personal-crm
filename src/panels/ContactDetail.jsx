@@ -5,14 +5,14 @@ import {
   formatBirthday, formatDate, formatRelative,
   interactionEmoji, daysUntilDate, birthdayDaysUntil,
   todayISO, followUpDaysPreset, RELATIONSHIPS,
-  TIER_CADENCE, TIER_COLORS, TAG_NAMESPACES, groupTags,
+  TIER_CADENCE, TIER_COLORS, TAG_NAMESPACES, groupTags, INTERACTION_TYPES,
 } from "../lib/utils.js";
 import Avatar from "../components/Avatar.jsx";
 import RelChip from "../components/RelChip.jsx";
 import DueBadge from "../components/DueBadge.jsx";
 import QuickLog from "./QuickLog.jsx";
 
-export default function ContactDetail({ contact: c, onClose, onUpdate, onAddInteraction, onDeleteInteraction, onDelete }) {
+export default function ContactDetail({ contact: c, onClose, onUpdate, onAddInteraction, onUpdateInteraction, onDeleteInteraction, onDelete }) {
   const [editMode, setEditMode] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [aiState, setAiState] = useState("idle");
@@ -24,6 +24,7 @@ export default function ContactDetail({ contact: c, onClose, onUpdate, onAddInte
   const [showPrep, setShowPrep] = useState(false);
   const [prepState, setPrepState] = useState("idle"); // idle | loading | done
   const [prepResult, setPrepResult] = useState(null);
+  const [editingInteractionId, setEditingInteractionId] = useState(null);
 
   const strength = computeStrength(c);
   const sColor = strengthColor(strength);
@@ -373,11 +374,22 @@ Return ONLY valid JSON, no markdown:
                 <div key={i.id} className="tl-item">
                   <div className="tl-dot">{interactionEmoji(i.type)}</div>
                   <div className="tl-content">
-                    <div className="tl-meta">
-                      <span className="tl-date">{formatDate(i.date)}</span>
-                      <button className="tl-delete" onClick={() => onDeleteInteraction(i.id)}>×</button>
-                    </div>
-                    {i.note && <div className="tl-note">{i.note}</div>}
+                    {editingInteractionId === i.id ? (
+                      <InteractionEditForm
+                        interaction={i}
+                        onSave={patch => { onUpdateInteraction(i.id, patch); setEditingInteractionId(null); }}
+                        onCancel={() => setEditingInteractionId(null)}
+                      />
+                    ) : (
+                      <>
+                        <div className="tl-meta">
+                          <span className="tl-date">{formatDate(i.date)}</span>
+                          <button className="tl-delete" title="Edit" style={{ fontSize: 12 }} onClick={() => setEditingInteractionId(i.id)}>✎</button>
+                          <button className="tl-delete" onClick={() => onDeleteInteraction(i.id)}>×</button>
+                        </div>
+                        {i.note && <div className="tl-note">{i.note}</div>}
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
@@ -401,6 +413,33 @@ Return ONLY valid JSON, no markdown:
             </button>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function InteractionEditForm({ interaction, onSave, onCancel }) {
+  const [date, setDate] = useState(interaction.date);
+  const [type, setType] = useState(interaction.type);
+  const [note, setNote] = useState(interaction.note || "");
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", gap: 6 }}>
+        <input type="date" className="form-input" style={{ fontSize: 12.5, padding: "4px 8px", width: 130 }}
+          value={date} onChange={e => setDate(e.target.value)} />
+        <select className="form-input" style={{ fontSize: 12.5, padding: "4px 8px", flex: 1 }}
+          value={type} onChange={e => setType(e.target.value)}>
+          {INTERACTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.emoji} {t.label}</option>)}
+        </select>
+      </div>
+      <textarea className="form-textarea" rows={2} style={{ fontSize: 12.5 }}
+        value={note} onChange={e => setNote(e.target.value)} placeholder="Note…" />
+      <div style={{ display: "flex", gap: 6 }}>
+        <button className="btn-primary" style={{ fontSize: 12, padding: "4px 12px" }}
+          disabled={!date}
+          onClick={() => onSave({ date, type, note: note.trim() || null })}>Save</button>
+        <button className="btn-secondary" style={{ fontSize: 12, padding: "4px 12px" }} onClick={onCancel}>Cancel</button>
       </div>
     </div>
   );

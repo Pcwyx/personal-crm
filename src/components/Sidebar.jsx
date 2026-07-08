@@ -18,7 +18,7 @@ export default function Sidebar({
   onOpenDetail, accentColor, onAccentChange,
   viewMode, onViewModeChange,
   onEnterSelectMode, onSignOut,
-  onExportAll,
+  onExportAll, onImport,
   gcalConnected, gcalLastSync, onGcalConnect, onGcalSync, onGcalDisconnect, onGcalSyncBirthdays,
 }) {
   const [showSettings, setShowSettings] = useState(false);
@@ -163,6 +163,18 @@ export default function Sidebar({
                 </button>
               ))}
             </div>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--ink-faint)", marginBottom: 6 }}>Import</div>
+            <button
+              onClick={onImport}
+              style={{
+                width: "100%", padding: "4px 0", marginBottom: 12,
+                borderRadius: 6, border: "1px solid var(--border)",
+                background: "none", color: "var(--ink-mid)",
+                fontSize: 11, fontWeight: 500, cursor: "pointer",
+              }}
+            >
+              ⤓ CSV / vCard…
+            </button>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--ink-faint)", marginBottom: 6 }}>Google Calendar</div>
             {gcalConnected ? (
               <div>

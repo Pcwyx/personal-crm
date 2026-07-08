@@ -195,6 +195,61 @@ async function showConfirm(chatId, state) {
   });
 }
 
+const TIER_CADENCE = { 1: 30, 2: 60, 3: 90, 4: 180 };
+
+async function handleToday(sb, chatId) {
+  const { data: contacts } = await sb
+    .from("contacts")
+    .select("id, name, birthday, next_follow_up, follow_up_note, last_contact, tier");
+  const all = contacts || [];
+
+  const nowGmt8 = new Date(Date.now() + 8 * 3600000);
+  const todayISO = nowGmt8.toISOString().slice(0, 10);
+  const todayMMDD = todayISO.slice(5);
+
+  const birthdays = all.filter(c => {
+    const raw = (c.birthday || "").startsWith("--") ? c.birthday.slice(2) : c.birthday;
+    return raw === todayMMDD;
+  });
+
+  const overdue = all
+    .filter(c => c.next_follow_up && c.next_follow_up <= todayISO)
+    .sort((a, b) => a.next_follow_up.localeCompare(b.next_follow_up));
+
+  const overdueIds = new Set(overdue.map(c => c.id));
+  const cold = all
+    .filter(c => {
+      if (overdueIds.has(c.id) || !c.last_contact) return false;
+      const ds = Math.floor((Date.now() - new Date(c.last_contact + "T00:00:00Z")) / 86400000);
+      return ds > (TIER_CADENCE[c.tier] || 90);
+    })
+    .sort((a, b) => (a.last_contact || "").localeCompare(b.last_contact || ""));
+
+  const lines = [`📋 <b>今日摘要 — ${todayISO}</b>`];
+  if (birthdays.length) {
+    lines.push("", "🎂 <b>今天生日</b>");
+    for (const c of birthdays) lines.push(`· ${esc(c.name)}`);
+  }
+  if (overdue.length) {
+    lines.push("", `⏰ <b>逾期 Follow-up（${overdue.length}）</b>`);
+    for (const c of overdue.slice(0, 8))
+      lines.push(`· ${esc(c.name)} — ${esc(c.next_follow_up)}${c.follow_up_note ? `（${esc(c.follow_up_note)}）` : ""}`);
+    if (overdue.length > 8) lines.push(`…還有 ${overdue.length - 8} 人`);
+  }
+  if (cold.length) {
+    lines.push("", `🌵 <b>變冷名單（${cold.length}）</b>`);
+    for (const c of cold.slice(0, 8)) {
+      const ds = Math.floor((Date.now() - new Date(c.last_contact + "T00:00:00Z")) / 86400000);
+      lines.push(`· ${esc(c.name)} — ${ds} 天未聯繫`);
+    }
+    if (cold.length > 8) lines.push(`…還有 ${cold.length - 8} 人`);
+  }
+  if (!birthdays.length && !overdue.length && !cold.length) {
+    lines.push("", "✅ 全部處理完畢，沒有待辦。");
+  }
+  await send(chatId, lines.join("\n"));
+}
+
 async function handleCb(sb, chatId, msgId, data) {
   const state = await getState(sb, chatId);
   if (!state) { await send(chatId, "Session 已過期，請重新輸入。"); return; }
@@ -321,7 +376,9 @@ export default async function handler(req, res) {
         await clearState(sb, chatId);
         await send(chatId, "已取消。");
       } else if (text === "/start") {
-        await send(chatId, "👋 CRM Bot 就緒！\n輸入互動描述，例如：「跟王小明吃午飯，聊了新創計畫」");
+        await send(chatId, "👋 CRM Bot 就緒！\n輸入互動描述，例如：「跟王小明吃午飯，聊了新創計畫」\n\n/today — 今日摘要（生日、逾期 follow-up、變冷名單）");
+      } else if (text === "/today") {
+        await handleToday(sb, chatId);
       } else {
         await handleNew(sb, chatId, text);
       }

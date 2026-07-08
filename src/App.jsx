@@ -14,6 +14,8 @@ import ContactDetail from "./panels/ContactDetail.jsx";
 import AddContactModal from "./panels/AddContactModal.jsx";
 import AddActivityModal from "./panels/AddActivityModal.jsx";
 import CalendarSyncModal from "./panels/CalendarSyncModal.jsx";
+import ReviewMode from "./panels/ReviewMode.jsx";
+import ImportModal from "./panels/ImportModal.jsx";
 
 const ACCENT_THEMES = {
   "#D97757": { acc: "#D97757", accLight: "#F2C4AE", accPale: "#FBF0EB" },
@@ -46,6 +48,8 @@ export default function App() {
   const [showCalendarSync, setShowCalendarSync] = useState(false);
   const [gcalToast, setGcalToast] = useState(null);
   const [undoToast, setUndoToast] = useState(null);
+  const [reviewQueue, setReviewQueue] = useState(null);
+  const [showImport, setShowImport] = useState(false);
 
   const syncTimers = useRef({});
   const loadedRef = useRef(false);
@@ -302,6 +306,29 @@ export default function App() {
     setSelectedIds(new Set());
   }
 
+  async function importContacts(drafts) {
+    const now = new Date().toISOString();
+    const rows = drafts.map(d => ({
+      id: crypto.randomUUID(),
+      ...d,
+      tier: 4,
+      cadence: null,
+      photo: null,
+      important_dates: [],
+      created_at: now,
+      updated_at: now,
+    }));
+    const { error } = await supabase.from("contacts").insert(rows);
+    if (error) {
+      console.error("[CRM] import failed:", error.message);
+      return false;
+    }
+    setContacts(prev => [...prev, ...rows.map(r => ({ ...r, interactions: [] }))]);
+    setGcalToast(`已匯入 ${rows.length} 位聯絡人`);
+    setTimeout(() => setGcalToast(null), 3500);
+    return true;
+  }
+
   function snoozeFollowUp(id, days) {
     updateContact(id, { next_follow_up: addDaysISO(days) });
   }
@@ -325,6 +352,27 @@ export default function App() {
       if (c.id !== contactId) return c;
       return { ...c, last_contact: newLast, interactions: [row, ...(c.interactions || [])] };
     }));
+  }
+
+  async function updateInteraction(contactId, interactionId, { date, type, note }) {
+    const { error } = await supabase
+      .from("interactions")
+      .update({ date, type, note })
+      .eq("id", interactionId);
+    if (error) {
+      setGlobalError("Failed to update interaction. Please try again.");
+      setTimeout(() => setGlobalError(null), 4000);
+      return;
+    }
+    const contact = contacts.find(c => c.id === contactId);
+    const ints = (contact?.interactions || [])
+      .map(i => (i.id === interactionId ? { ...i, date, type, note } : i))
+      .sort((a, b) => b.date.localeCompare(a.date));
+    const newLast = ints.length ? ints[0].date : null;
+    if (newLast !== contact?.last_contact) {
+      await supabase.from("contacts").update({ last_contact: newLast }).eq("id", contactId);
+    }
+    setContacts(prev => prev.map(c => (c.id === contactId ? { ...c, interactions: ints, last_contact: newLast } : c)));
   }
 
   function deleteInteraction(contactId, interactionId) {
@@ -439,6 +487,24 @@ export default function App() {
   }).length;
   const detailContact = contacts.find(c => c.id === detailId) || null;
 
+  function startReview() {
+    const overdue = contacts
+      .filter(c => c.next_follow_up && c.next_follow_up <= today)
+      .sort((a, b) => a.next_follow_up.localeCompare(b.next_follow_up))
+      .map(c => ({ id: c.id, reason: "overdue" }));
+    const overdueSet = new Set(overdue.map(q => q.id));
+    const cold = contacts
+      .filter(c => {
+        if (overdueSet.has(c.id)) return false;
+        const ds = daysSince(c.last_contact);
+        return ds !== null && ds > (TIER_CADENCE[c.tier] || 90);
+      })
+      .sort((a, b) => (daysSince(b.last_contact) ?? 0) - (daysSince(a.last_contact) ?? 0))
+      .map(c => ({ id: c.id, reason: "cold" }));
+    const queue = [...overdue, ...cold];
+    if (queue.length) setReviewQueue(queue);
+  }
+
   const hasFilter = filterRels.length > 0 || filterTier !== null || search.length > 0;
   const filteredForExport = hasFilter ? contacts.filter(c => {
     const q = search.toLowerCase();
@@ -484,6 +550,7 @@ export default function App() {
         onEnterSelectMode={enterSelectMode}
         onSignOut={() => supabase.auth.signOut()}
         onExportAll={(fmt) => fmt === "JSON" ? exportJSON(contacts,"all") : fmt === "CSV" ? exportCSV(contacts,"all") : exportVCard(contacts,"all")}
+        onImport={() => setShowImport(true)}
         gcalConnected={gcalConnected}
         gcalLastSync={gcalLastSync}
         onGcalConnect={() => { window.location.href = "/api/google/auth"; }}
@@ -516,6 +583,7 @@ export default function App() {
               }}
               onSnooze={snoozeFollowUp}
               onCheckIn={(id) => addInteraction(id, { date: today, type: "message", note: "Quick check-in" })}
+              onStartReview={startReview}
             />
           )}
           {activeView === "contacts" && (
@@ -556,6 +624,7 @@ export default function App() {
             onClose={() => setDetailId(null)}
             onUpdate={(patch) => updateContact(detailContact.id, patch)}
             onAddInteraction={(i) => addInteraction(detailContact.id, i)}
+            onUpdateInteraction={(iid, patch) => updateInteraction(detailContact.id, iid, patch)}
             onDeleteInteraction={(iid) => deleteInteraction(detailContact.id, iid)}
             onDelete={() => deleteContact(detailContact.id)}
           />
@@ -617,6 +686,30 @@ export default function App() {
         }}>
           {globalError}
         </div>
+      )}
+
+      {showImport && (
+        <ImportModal
+          contacts={contacts}
+          onClose={() => setShowImport(false)}
+          onImport={importContacts}
+        />
+      )}
+
+      {reviewQueue && (
+        <ReviewMode
+          queue={reviewQueue}
+          contacts={contactsEnriched}
+          onClose={() => setReviewQueue(null)}
+          onMarkDone={(id) => {
+            updateContact(id, { next_follow_up: null, follow_up_note: null });
+            addInteraction(id, { date: today, type: "message", note: "Quick check-in" });
+          }}
+          onSnooze={snoozeFollowUp}
+          onCheckIn={(id) => addInteraction(id, { date: today, type: "message", note: "Quick check-in" })}
+          onLog={addInteraction}
+          onOpenDetail={(id) => setDetailId(id)}
+        />
       )}
 
       {showCalendarSync && (
